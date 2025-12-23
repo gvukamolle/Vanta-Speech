@@ -13,7 +13,7 @@ final class AudioRecorder: NSObject, ObservableObject {
     private var startTime: Date?
 
     private let fileManager = FileManager.default
-    private let converter = AudioConverter(quality: .high)
+    private let converter = AudioConverter(quality: .low)  // 64k - optimal for voice
 
     var recordingsDirectory: URL {
         let documentsPath = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]

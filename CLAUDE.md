@@ -115,11 +115,12 @@ VantaSpeech/
 
 **Параметры конвертации (AudioConverter.swift):**
 - Codec: libopus (оптимален для голоса)
-- Bitrate: 64k/96k/128k (настраивается)
+- Bitrate: **64 kbps** (фиксировано, оптимально для голоса)
 - Sample rate: 48000 Hz
 - Channels: 1 (mono, достаточно для встреч)
 - Application: voip (оптимизация для голоса)
 - VBR: on (variable bitrate для лучшего качества)
+- ~480 KB/min (примерный размер файла)
 
 **FFmpegKit SPM Package:**
 ```swift

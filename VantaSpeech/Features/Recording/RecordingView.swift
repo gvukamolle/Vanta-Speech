@@ -85,7 +85,7 @@ struct RecordingView: View {
                 }
 
                 // Format indicator
-                Text("Format: OGG/Opus")
+                Text("OGG/Opus • 64 kbps")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
 
