@@ -3,6 +3,7 @@ import SwiftData
 
 struct RecordingDetailView: View {
     @Bindable var recording: Recording
+    @AppStorage("serverURL") private var serverURL = ""
     @StateObject private var player = AudioPlayer()
     @State private var isTranscribing = false
     @State private var showError = false
@@ -33,6 +34,13 @@ struct RecordingDetailView: View {
                 // Transcribe Button (if not transcribed)
                 if !recording.isTranscribed {
                     transcribeButton
+
+                    if serverURL.isEmpty {
+                        Text("Configure server URL in Settings to enable transcription")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                            .multilineTextAlignment(.center)
+                    }
                 }
 
                 // Content Tabs (Transcription / Summary)
@@ -230,11 +238,11 @@ struct RecordingDetailView: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 16)
-            .background(isTranscribing ? Color.gray : Color.accentColor)
+            .background(isTranscribing || serverURL.isEmpty ? Color.gray : Color.accentColor)
             .foregroundStyle(.white)
             .clipShape(RoundedRectangle(cornerRadius: 16))
         }
-        .disabled(isTranscribing)
+        .disabled(isTranscribing || serverURL.isEmpty)
     }
 
     // MARK: - Content Section
@@ -329,12 +337,12 @@ struct RecordingDetailView: View {
 
         Task {
             do {
-                // TODO: Replace with actual server URL from settings
-                guard let serverURL = URL(string: "https://api.example.com") else {
+                guard !serverURL.isEmpty,
+                      let url = URL(string: serverURL) else {
                     throw TranscriptionService.TranscriptionError.invalidURL
                 }
 
-                let service = TranscriptionService(baseURL: serverURL)
+                let service = TranscriptionService(baseURL: url)
                 let audioURL = URL(fileURLWithPath: recording.audioFileURL)
                 let result = try await service.transcribe(audioFileURL: audioURL)
 

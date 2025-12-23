@@ -17,7 +17,13 @@ final class AudioRecorder: NSObject, ObservableObject {
     private var pausedDuration: TimeInterval = 0
 
     private let fileManager = FileManager.default
-    private let converter = AudioConverter(quality: .low)  // 64k - optimal for voice
+
+    /// Converter with quality from user settings
+    private var converter: AudioConverter {
+        let qualityRaw = UserDefaults.standard.string(forKey: "audioQuality") ?? AudioQuality.low.rawValue
+        let quality = AudioQuality(rawValue: qualityRaw) ?? .low
+        return AudioConverter(quality: quality)
+    }
 
     // MARK: - Lifecycle
 

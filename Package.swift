@@ -6,18 +6,16 @@ import PackageDescription
 let package = Package(
     name: "VantaSpeech",
     platforms: [
-        .iOS(.v17),
-        .macOS(.v14)
+        .iOS(.v17)
     ],
     products: [
         .library(
-            name: "VantaSpeechCore",
-            targets: ["VantaSpeechCore"]
+            name: "VantaSpeech",
+            targets: ["VantaSpeech"]
         ),
     ],
     dependencies: [
         // FFmpegKit for audio conversion to OGG/Opus
-        // Full version includes all codecs including libopus
         .package(
             url: "https://github.com/arthenica/ffmpeg-kit-spm.git",
             from: "6.0.0"
@@ -25,15 +23,22 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "VantaSpeechCore",
+            name: "VantaSpeech",
             dependencies: [
                 .product(name: "ffmpeg-kit-ios-full", package: "ffmpeg-kit-spm")
             ],
-            path: "VantaSpeech/Core"
+            path: "VantaSpeech",
+            exclude: [
+                "Resources/Info.plist",
+                "Resources/VantaSpeech.entitlements"
+            ],
+            resources: [
+                .process("Resources/Assets.xcassets")
+            ]
         ),
         .testTarget(
-            name: "VantaSpeechCoreTests",
-            dependencies: ["VantaSpeechCore"],
+            name: "VantaSpeechTests",
+            dependencies: ["VantaSpeech"],
             path: "Tests"
         ),
     ]

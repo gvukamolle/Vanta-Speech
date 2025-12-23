@@ -3,20 +3,10 @@ import SwiftUI
 struct SettingsView: View {
     @AppStorage("serverURL") private var serverURL = ""
     @AppStorage("autoTranscribe") private var autoTranscribe = false
-    @AppStorage("audioQuality") private var audioQuality = AudioQuality.high
+    @AppStorage("audioQuality") private var audioQualityRaw = AudioQuality.low.rawValue
 
-    enum AudioQuality: String, CaseIterable {
-        case low = "Low"
-        case medium = "Medium"
-        case high = "High"
-
-        var description: String {
-            switch self {
-            case .low: return "Smaller files, lower quality"
-            case .medium: return "Balanced"
-            case .high: return "Best quality, larger files"
-            }
-        }
+    private var audioQuality: AudioQuality {
+        get { AudioQuality(rawValue: audioQualityRaw) ?? .low }
     }
 
     var body: some View {
@@ -32,9 +22,9 @@ struct SettingsView: View {
                 }
 
                 Section("Recording") {
-                    Picker("Audio Quality", selection: $audioQuality) {
-                        ForEach(AudioQuality.allCases, id: \.self) { quality in
-                            Text(quality.rawValue).tag(quality)
+                    Picker("Audio Quality", selection: $audioQualityRaw) {
+                        ForEach(AudioQuality.allCases, id: \.rawValue) { quality in
+                            Text(quality.displayName).tag(quality.rawValue)
                         }
                     }
 

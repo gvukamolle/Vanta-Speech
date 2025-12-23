@@ -1,6 +1,41 @@
 import Foundation
 import AVFoundation
 
+// MARK: - Audio Quality
+
+/// Audio quality settings for OGG/Opus encoding
+enum AudioQuality: String, CaseIterable, Sendable {
+    case low = "low"
+    case medium = "medium"
+    case high = "high"
+
+    var bitrate: String {
+        switch self {
+        case .low: return "64k"
+        case .medium: return "96k"
+        case .high: return "128k"
+        }
+    }
+
+    var displayName: String {
+        switch self {
+        case .low: return "Low"
+        case .medium: return "Medium"
+        case .high: return "High"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .low: return "64 kbps - Smaller files"
+        case .medium: return "96 kbps - Balanced"
+        case .high: return "128 kbps - Best quality"
+        }
+    }
+}
+
+// MARK: - Audio Converter
+
 /// Converts audio files to OGG/Opus format using FFmpegKit
 /// iOS does not natively support OGG recording, so we record in M4A and convert
 actor AudioConverter {
@@ -21,28 +56,6 @@ actor AudioConverter {
                 return "FFmpeg is not available"
             case .invalidOutput:
                 return "Conversion produced invalid output"
-            }
-        }
-    }
-
-    enum AudioQuality: Sendable {
-        case low      // 64 kbps - smaller files
-        case medium   // 96 kbps - balanced
-        case high     // 128 kbps - best quality
-
-        var bitrate: String {
-            switch self {
-            case .low: return "64k"
-            case .medium: return "96k"
-            case .high: return "128k"
-            }
-        }
-
-        var description: String {
-            switch self {
-            case .low: return "64 kbps"
-            case .medium: return "96 kbps"
-            case .high: return "128 kbps"
             }
         }
     }
