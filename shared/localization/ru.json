@@ -1,0 +1,85 @@
+{
+  "app": {
+    "name": "Vanta Speech",
+    "description": "Запись встреч с AI-транскрипцией"
+  },
+  "navigation": {
+    "library": "Библиотека",
+    "record": "Запись",
+    "settings": "Настройки"
+  },
+  "recording": {
+    "title": "Новая запись",
+    "tapToRecord": "Нажмите для записи",
+    "recording": "Запись...",
+    "paused": "Пауза",
+    "converting": "Конвертация...",
+    "stop": "Стоп",
+    "pause": "Пауза",
+    "resume": "Продолжить",
+    "background": "Запись в фоне"
+  },
+  "library": {
+    "title": "Записи",
+    "empty": "Записей пока нет",
+    "emptySubtitle": "Нажмите кнопку записи для начала",
+    "search": "Поиск записей...",
+    "recent": "Недавние"
+  },
+  "detail": {
+    "transcription": "Транскрипция",
+    "summary": "Саммари",
+    "transcribe": "Транскрибировать",
+    "transcribing": "Транскрибирую...",
+    "copy": "Копировать",
+    "share": "Поделиться",
+    "delete": "Удалить",
+    "rename": "Переименовать",
+    "noTranscription": "Транскрипция отсутствует",
+    "noSummary": "Саммари недоступно"
+  },
+  "settings": {
+    "title": "Настройки",
+    "server": "Конфигурация сервера",
+    "serverUrl": "URL сервера",
+    "serverUrlHint": "https://your-server.com",
+    "autoTranscribe": "Авто-транскрипция",
+    "autoTranscribeDesc": "Автоматически транскрибировать после записи",
+    "audioQuality": "Качество аудио",
+    "qualityLow": "Низкое (64 kbps)",
+    "qualityMedium": "Среднее (96 kbps)",
+    "qualityHigh": "Высокое (128 kbps)",
+    "integrations": "Интеграции",
+    "confluence": "Confluence",
+    "notion": "Notion",
+    "googleDocs": "Google Docs",
+    "about": "О приложении",
+    "version": "Версия",
+    "clearAll": "Удалить все записи"
+  },
+  "permissions": {
+    "audioTitle": "Требуется доступ к микрофону",
+    "audioMessage": "Vanta Speech требуется доступ к микрофону для записи встреч.",
+    "grant": "Разрешить",
+    "denied": "Доступ запрещён"
+  },
+  "notifications": {
+    "channelRecording": "Запись",
+    "channelRecordingDesc": "Уведомления о текущей записи",
+    "recordingTitle": "Идёт запись",
+    "recordingText": "Нажмите для возврата в VantaSpeech"
+  },
+  "errors": {
+    "recordingFailed": "Ошибка записи",
+    "transcriptionFailed": "Ошибка транскрипции",
+    "network": "Ошибка сети. Проверьте подключение.",
+    "server": "Ошибка сервера. Попробуйте позже."
+  },
+  "actions": {
+    "ok": "OK",
+    "cancel": "Отмена",
+    "save": "Сохранить",
+    "delete": "Удалить",
+    "retry": "Повторить"
+  }
+}
