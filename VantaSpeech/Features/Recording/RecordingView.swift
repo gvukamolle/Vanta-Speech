@@ -3,6 +3,7 @@ import SwiftData
 
 struct RecordingView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var recorder = AudioRecorder()
     @State private var recordingTitle = ""
     @State private var currentRecordingURL: URL?
@@ -12,6 +13,8 @@ struct RecordingView: View {
     private var statusText: String {
         if recorder.isConverting {
             return "Converting to OGG..."
+        } else if recorder.isInterrupted {
+            return "Paused (Interruption)"
         } else if recorder.isRecording {
             return "Recording"
         } else {
@@ -19,34 +22,88 @@ struct RecordingView: View {
         }
     }
 
+    private var statusColor: Color {
+        if recorder.isInterrupted {
+            return .orange
+        } else if recorder.isRecording {
+            return .red
+        } else {
+            return .primary
+        }
+    }
+
     var body: some View {
         NavigationStack {
-            VStack(spacing: 40) {
+            VStack(spacing: 32) {
                 Spacer()
 
+                // Background recording indicator
+                if recorder.isRecording {
+                    backgroundRecordingBadge
+                }
+
                 // Status
-                Text(statusText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
+                HStack(spacing: 8) {
+                    if recorder.isRecording && !recorder.isInterrupted {
+                        Circle()
+                            .fill(.red)
+                            .frame(width: 8, height: 8)
+                            .modifier(PulseAnimation())
+                    } else if recorder.isInterrupted {
+                        Image(systemName: "pause.circle.fill")
+                            .foregroundStyle(.orange)
+                    }
+
+                    Text(statusText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                }
 
                 // Timer Display
                 Text(formatTime(recorder.recordingDuration))
                     .font(.system(size: 64, weight: .light, design: .monospaced))
-                    .foregroundStyle(recorder.isRecording ? .red : .primary)
+                    .foregroundStyle(statusColor)
+                    .contentTransition(.numericText())
+                    .animation(.linear(duration: 0.1), value: recorder.recordingDuration)
 
                 // Audio Level Indicator
-                if recorder.isRecording {
+                if recorder.isRecording && !recorder.isInterrupted {
                     AudioLevelView(level: recorder.audioLevel)
                         .frame(height: 60)
                         .padding(.horizontal, 40)
+                        .transition(.opacity)
+                }
+
+                // Interruption message
+                if recorder.isInterrupted {
+                    VStack(spacing: 8) {
+                        Image(systemName: "phone.fill")
+                            .font(.title)
+                            .foregroundStyle(.orange)
+                        Text("Recording paused due to interruption")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("Will resume automatically")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding()
+                    .background(Color.orange.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .transition(.scale.combined(with: .opacity))
                 }
 
                 // Converting indicator
                 if recorder.isConverting {
-                    ProgressView()
-                        .scaleEffect(1.5)
-                        .padding()
+                    VStack(spacing: 8) {
+                        ProgressView()
+                            .scaleEffect(1.5)
+                        Text("Converting to OGG...")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding()
                 }
 
                 Spacer()
@@ -56,49 +113,91 @@ struct RecordingView: View {
                     if recorder.isRecording {
                         // Stop Button
                         Button(action: stopRecording) {
-                            Image(systemName: "stop.fill")
-                                .font(.system(size: 32))
-                                .foregroundStyle(.white)
-                                .frame(width: 80, height: 80)
-                                .background(.red)
-                                .clipShape(Circle())
+                            ZStack {
+                                Circle()
+                                    .fill(.red)
+                                    .frame(width: 80, height: 80)
+
+                                Image(systemName: "stop.fill")
+                                    .font(.system(size: 32))
+                                    .foregroundStyle(.white)
+                            }
                         }
+                        .shadow(color: .red.opacity(0.3), radius: 10, y: 5)
                     } else if recorder.isConverting {
                         // Disabled button during conversion
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                            .font(.system(size: 32))
-                            .foregroundStyle(.white)
-                            .frame(width: 80, height: 80)
-                            .background(.gray)
-                            .clipShape(Circle())
+                        ZStack {
+                            Circle()
+                                .fill(.gray)
+                                .frame(width: 80, height: 80)
+
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                                .font(.system(size: 32))
+                                .foregroundStyle(.white)
+                                .rotationEffect(.degrees(recorder.isConverting ? 360 : 0))
+                                .animation(.linear(duration: 1).repeatForever(autoreverses: false), value: recorder.isConverting)
+                        }
                     } else {
                         // Record Button
                         Button(action: startRecording) {
-                            Image(systemName: "mic.fill")
-                                .font(.system(size: 32))
-                                .foregroundStyle(.white)
-                                .frame(width: 80, height: 80)
-                                .background(.red)
-                                .clipShape(Circle())
+                            ZStack {
+                                Circle()
+                                    .fill(.red)
+                                    .frame(width: 80, height: 80)
+
+                                Image(systemName: "mic.fill")
+                                    .font(.system(size: 32))
+                                    .foregroundStyle(.white)
+                            }
                         }
+                        .shadow(color: .red.opacity(0.3), radius: 10, y: 5)
                     }
                 }
 
                 // Format indicator
-                Text("OGG/Opus • 64 kbps")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                VStack(spacing: 4) {
+                    Text("OGG/Opus • 64 kbps")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+
+                    if recorder.isRecording {
+                        Text("Background recording enabled")
+                            .font(.caption2)
+                            .foregroundStyle(.green)
+                    }
+                }
 
                 Spacer()
             }
+            .padding()
             .navigationTitle("Record")
             .alert("Error", isPresented: $showError) {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(errorMessage)
             }
+            .animation(.easeInOut(duration: 0.3), value: recorder.isRecording)
+            .animation(.easeInOut(duration: 0.3), value: recorder.isInterrupted)
         }
     }
+
+    // MARK: - Background Recording Badge
+
+    private var backgroundRecordingBadge: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+
+            Text("Recording continues in background")
+                .font(.caption)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Color.green.opacity(0.1))
+        .clipShape(Capsule())
+    }
+
+    // MARK: - Actions
 
     private func startRecording() {
         Task {
@@ -113,7 +212,6 @@ struct RecordingView: View {
 
     private func stopRecording() {
         Task {
-            // Stop and convert to OGG
             let result = await recorder.stopRecording(convertToOGG: true)
 
             switch result {
@@ -148,6 +246,24 @@ struct RecordingView: View {
         }
     }
 }
+
+// MARK: - Pulse Animation
+
+struct PulseAnimation: ViewModifier {
+    @State private var isPulsing = false
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(isPulsing ? 1.2 : 1.0)
+            .opacity(isPulsing ? 0.8 : 1.0)
+            .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: isPulsing)
+            .onAppear {
+                isPulsing = true
+            }
+    }
+}
+
+// MARK: - Audio Level View
 
 struct AudioLevelView: View {
     let level: Float
