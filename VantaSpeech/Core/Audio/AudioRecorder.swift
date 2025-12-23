@@ -4,6 +4,7 @@ import Foundation
 @MainActor
 final class AudioRecorder: NSObject, ObservableObject {
     @Published var isRecording = false
+    @Published var isConverting = false
     @Published var recordingDuration: TimeInterval = 0
     @Published var audioLevel: Float = 0
 
@@ -12,6 +13,7 @@ final class AudioRecorder: NSObject, ObservableObject {
     private var startTime: Date?
 
     private let fileManager = FileManager.default
+    private let converter = AudioConverter(quality: .high)
 
     var recordingsDirectory: URL {
         let documentsPath = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -77,6 +79,43 @@ final class AudioRecorder: NSObject, ObservableObject {
         audioRecorder = nil
 
         return (url, duration)
+    }
+
+    /// Stop recording and convert to OGG format
+    /// - Returns: Result with OGG file URL and duration, or error
+    func stopRecordingAndConvert() async -> Result<(url: URL, duration: TimeInterval), Error> {
+        guard let result = stopRecording() else {
+            return .failure(AudioRecorderError.recordingFailed)
+        }
+
+        isConverting = true
+        defer { isConverting = false }
+
+        do {
+            let oggURL = try await converter.convertToOGG(
+                inputURL: result.url,
+                deleteSource: true  // Delete M4A after successful conversion
+            )
+            return .success((oggURL, result.duration))
+        } catch {
+            // If conversion fails, return original M4A
+            print("OGG conversion failed: \(error.localizedDescription). Using M4A.")
+            return .success(result)
+        }
+    }
+
+    /// Stop recording with optional OGG conversion
+    /// - Parameter convertToOGG: Whether to convert to OGG format
+    /// - Returns: Result with file URL and duration
+    func stopRecording(convertToOGG: Bool) async -> Result<(url: URL, duration: TimeInterval), Error> {
+        if convertToOGG {
+            return await stopRecordingAndConvert()
+        } else {
+            guard let result = stopRecording() else {
+                return .failure(AudioRecorderError.recordingFailed)
+            }
+            return .success(result)
+        }
     }
 
     func pauseRecording() {

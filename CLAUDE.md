@@ -49,6 +49,7 @@ iOS/macOS приложение для записи, транскрипции и 
 - **AVFoundation** - Audio recording & playback
 - **SwiftData** - Local storage (или Core Data для совместимости)
 - **URLSession** - Network requests (async/await)
+- **FFmpegKit** - Audio conversion to OGG/Opus
 
 ### Target Platforms
 - iOS 17.0+
@@ -103,8 +104,27 @@ VantaSpeech/
 - Response: JSON с транскрипцией и саммари
 
 ### Audio Format
-- Recording: OGG/Opus (preferred) или M4A/AAC (iOS native)
-- Note: iOS нативно не поддерживает OGG запись, потребуется конвертация
+- Recording: M4A/AAC (iOS native) → converted to OGG/Opus
+- iOS нативно не поддерживает OGG запись
+- Конвертация выполняется локально через FFmpegKit после записи
+
+### OGG Conversion Pipeline
+```
+[AVAudioRecorder] → M4A/AAC → [FFmpegKit] → OGG/Opus → [Upload to Server]
+```
+
+**Параметры конвертации (AudioConverter.swift):**
+- Codec: libopus (оптимален для голоса)
+- Bitrate: 64k/96k/128k (настраивается)
+- Sample rate: 48000 Hz
+- Channels: 1 (mono, достаточно для встреч)
+- Application: voip (оптимизация для голоса)
+- VBR: on (variable bitrate для лучшего качества)
+
+**FFmpegKit SPM Package:**
+```swift
+.package(url: "https://github.com/arthenica/ffmpeg-kit-spm.git", from: "6.0.0")
+```
 
 ## External Integrations
 

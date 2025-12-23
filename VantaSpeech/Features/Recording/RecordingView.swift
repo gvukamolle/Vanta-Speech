@@ -9,10 +9,26 @@ struct RecordingView: View {
     @State private var showError = false
     @State private var errorMessage = ""
 
+    private var statusText: String {
+        if recorder.isConverting {
+            return "Converting to OGG..."
+        } else if recorder.isRecording {
+            return "Recording"
+        } else {
+            return "Ready"
+        }
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 40) {
                 Spacer()
+
+                // Status
+                Text(statusText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
 
                 // Timer Display
                 Text(formatTime(recorder.recordingDuration))
@@ -24,6 +40,13 @@ struct RecordingView: View {
                     AudioLevelView(level: recorder.audioLevel)
                         .frame(height: 60)
                         .padding(.horizontal, 40)
+                }
+
+                // Converting indicator
+                if recorder.isConverting {
+                    ProgressView()
+                        .scaleEffect(1.5)
+                        .padding()
                 }
 
                 Spacer()
@@ -40,6 +63,14 @@ struct RecordingView: View {
                                 .background(.red)
                                 .clipShape(Circle())
                         }
+                    } else if recorder.isConverting {
+                        // Disabled button during conversion
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.system(size: 32))
+                            .foregroundStyle(.white)
+                            .frame(width: 80, height: 80)
+                            .background(.gray)
+                            .clipShape(Circle())
                     } else {
                         // Record Button
                         Button(action: startRecording) {
@@ -52,6 +83,11 @@ struct RecordingView: View {
                         }
                     }
                 }
+
+                // Format indicator
+                Text("Format: OGG/Opus")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
 
                 Spacer()
             }
@@ -76,18 +112,28 @@ struct RecordingView: View {
     }
 
     private func stopRecording() {
-        guard let result = recorder.stopRecording() else { return }
+        Task {
+            // Stop and convert to OGG
+            let result = await recorder.stopRecording(convertToOGG: true)
 
-        let title = "Meeting \(Date().formatted(date: .abbreviated, time: .shortened))"
+            switch result {
+            case .success(let data):
+                let title = "Meeting \(Date().formatted(date: .abbreviated, time: .shortened))"
 
-        let recording = Recording(
-            title: title,
-            duration: result.duration,
-            audioFileURL: result.url.path
-        )
+                let recording = Recording(
+                    title: title,
+                    duration: data.duration,
+                    audioFileURL: data.url.path
+                )
 
-        modelContext.insert(recording)
-        currentRecordingURL = nil
+                modelContext.insert(recording)
+                currentRecordingURL = nil
+
+            case .failure(let error):
+                errorMessage = error.localizedDescription
+                showError = true
+            }
+        }
     }
 
     private func formatTime(_ time: TimeInterval) -> String {
