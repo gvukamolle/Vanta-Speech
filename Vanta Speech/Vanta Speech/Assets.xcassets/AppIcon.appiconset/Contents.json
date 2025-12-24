@@ -1,0 +1,37 @@
+{
+  "images" : [
+    {
+      "filename" : "abstract_3d_background_in_vanta_style__no_text_or_lettering_just_clean_visuals_soft_pink_plush_text_kaizjvclquct0dy4dkh0_0 1.png",
+      "idiom" : "universal",
+      "platform" : "ios",
+      "size" : "1024x1024"
+    },
+    {
+      "appearances" : [
+        {
+          "appearance" : "luminosity",
+          "value" : "dark"
+        }
+      ],
+      "filename" : "abstract_3d_background_in_vanta_style__no_text_or_lettering_just_clean_visuals_soft_pink_plush_text_kaizjvclquct0dy4dkh0_0 2.png",
+      "idiom" : "universal",
+      "platform" : "ios",
+      "size" : "1024x1024"
+    },
+    {
+      "appearances" : [
+        {
+          "appearance" : "luminosity",
+          "value" : "tinted"
+        }
+      ],
+      "idiom" : "universal",
+      "platform" : "ios",
+      "size" : "1024x1024"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}
