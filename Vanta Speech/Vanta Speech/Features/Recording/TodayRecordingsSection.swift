@@ -29,7 +29,7 @@ struct TodayRecordingsSection: View {
             NavigationStack {
                 RecordingDetailView(recording: recording)
             }
-            .presentationDetents([.large])
+            .adaptiveSheet()
             .presentationDragIndicator(.visible)
         }
     }

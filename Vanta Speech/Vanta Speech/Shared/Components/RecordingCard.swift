@@ -85,6 +85,7 @@ struct RecordingCard: View {
             }
             .padding(16)
             .vantaGlassCard(cornerRadius: 24, shadowRadius: 0, tintOpacity: 0.15)
+            .vantaHover(.lift)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

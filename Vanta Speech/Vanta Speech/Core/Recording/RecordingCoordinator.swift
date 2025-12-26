@@ -273,10 +273,15 @@ final class RecordingCoordinator: ObservableObject {
 
     /// Начать транскрипцию pending записи
     func startTranscription() async {
+        print("[RecordingCoordinator] startTranscription called")
+
         guard let pending = pendingTranscription else {
-            print("[RecordingCoordinator] No pending transcription")
+            print("[RecordingCoordinator] No pending transcription - pendingTranscription is nil!")
             return
         }
+
+        print("[RecordingCoordinator] Starting transcription for recording: \(pending.recordingId)")
+        print("[RecordingCoordinator] Audio URL: \(pending.audioURL)")
 
         isTranscribing = true
 
@@ -402,6 +407,7 @@ final class RecordingCoordinator: ObservableObject {
         // From Live Activity - start transcription
         NotificationCenter.default.publisher(for: .startTranscriptionFromLiveActivity)
             .sink { [weak self] _ in
+                print("[RecordingCoordinator] Received startTranscriptionFromLiveActivity notification")
                 Task { @MainActor in
                     await self?.startTranscription()
                 }

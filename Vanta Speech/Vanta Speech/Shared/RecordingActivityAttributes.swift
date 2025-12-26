@@ -73,7 +73,7 @@ enum RecordingActivityStatus: String, Codable, Hashable {
 // MARK: - App Group Constants
 
 enum AppGroupConstants {
-    static let suiteName = "group.pretty.health.Vanta-Speech"
+    static let suiteName = "group.ru.poscredit.Vanta-Speech"
     static let recordingActionKey = "recording_action"
     static let disabledPresetsKey = "disabled_presets"
     static let presetOrderKey = "preset_order"

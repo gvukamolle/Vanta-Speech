@@ -7,7 +7,14 @@ struct CalendarDayView: View {
     let isSelected: Bool
     let onTap: () -> Void
 
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
     private let calendar = Calendar.current
+
+    /// Размер ячейки: 48pt на iPad, 40pt на iPhone
+    private var cellSize: CGFloat {
+        horizontalSizeClass == .regular ? 48 : 40
+    }
 
     var body: some View {
         Button(action: onTap) {
@@ -29,11 +36,11 @@ struct CalendarDayView: View {
 
                 if let day = day {
                     Text("\(calendar.component(.day, from: day))")
-                        .font(.system(.body, weight: hasRecordings || isSelected ? .semibold : .regular))
+                        .font(.system(horizontalSizeClass == .regular ? .title3 : .body, weight: hasRecordings || isSelected ? .semibold : .regular))
                         .foregroundStyle(textColor)
                 }
             }
-            .frame(width: 40, height: 40)
+            .frame(width: cellSize, height: cellSize)
         }
         .buttonStyle(.plain)
         .disabled(day == nil)

@@ -223,6 +223,8 @@ final class LiveActivityManager: ObservableObject {
     private func checkForActions() {
         guard let action = appGroupDefaults?.string(forKey: AppGroupConstants.recordingActionKey) else { return }
 
+        print("[LiveActivityManager] Received action from Live Activity: \(action)")
+
         // Очищаем action
         appGroupDefaults?.removeObject(forKey: AppGroupConstants.recordingActionKey)
         appGroupDefaults?.synchronize()
@@ -236,13 +238,14 @@ final class LiveActivityManager: ObservableObject {
         case "stop":
             NotificationCenter.default.post(name: .stopRecordingFromLiveActivity, object: nil)
         case "transcribe":
+            print("[LiveActivityManager] Posting startTranscriptionFromLiveActivity notification")
             NotificationCenter.default.post(name: .startTranscriptionFromLiveActivity, object: nil)
         case "dismiss":
             NotificationCenter.default.post(name: .dismissActivityFromLiveActivity, object: nil)
         case "hide":
             NotificationCenter.default.post(name: .hideActivityFromLiveActivity, object: nil)
         default:
-            break
+            print("[LiveActivityManager] Unknown action: \(action)")
         }
     }
 }

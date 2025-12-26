@@ -4,7 +4,7 @@
 <dict>
 	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>group.pretty.health.Vanta-Speech</string>
+		<string>group.ru.poscredit.Vanta-Speech</string>
 	</array>
 </dict>
 </plist>

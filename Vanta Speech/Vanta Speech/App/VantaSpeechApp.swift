@@ -49,10 +49,11 @@ struct VantaSpeechApp: App {
     }()
 
     var body: some Scene {
+        // Основное окно приложения
         WindowGroup {
             Group {
                 if authManager.isAuthenticated {
-                    ContentView()
+                    AdaptiveRootView()
                         .environmentObject(coordinator)
                         .environmentObject(coordinator.audioRecorder)
                         .onAppear {
@@ -72,5 +73,17 @@ struct VantaSpeechApp: App {
             .vantaThemed()
         }
         .modelContainer(sharedModelContainer)
+
+        // Дополнительное окно для просмотра записи (Stage Manager на iPad)
+        WindowGroup("Запись", id: "recording", for: UUID.self) { $recordingId in
+            if let id = recordingId {
+                RecordingDetailWindow(recordingId: id)
+                    .environmentObject(coordinator)
+                    .environmentObject(coordinator.audioRecorder)
+                    .vantaThemed()
+            }
+        }
+        .modelContainer(sharedModelContainer)
+        .defaultSize(width: 600, height: 800)
     }
 }

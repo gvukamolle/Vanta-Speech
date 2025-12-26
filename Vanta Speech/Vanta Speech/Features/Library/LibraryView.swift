@@ -50,7 +50,7 @@ struct LibraryView: View {
             }) {
                 if let date = selectedDate {
                     DayRecordingsSheet(date: date)
-                        .presentationDetents([.large])
+                        .adaptiveSheet()
                         .presentationDragIndicator(.visible)
                 }
             }
