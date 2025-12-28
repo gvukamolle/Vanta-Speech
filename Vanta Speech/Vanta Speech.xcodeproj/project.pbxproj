@@ -10,6 +10,7 @@
 		AF7A0C0C2EFC7C3A00820629 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AF7A0C0B2EFC7C3A00820629 /* WidgetKit.framework */; };
 		AF7A0C0E2EFC7C3A00820629 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AF7A0C0D2EFC7C3A00820629 /* SwiftUI.framework */; };
 		AF7A0C1B2EFC7C3C00820629 /* VantaSpeechWidgetsExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AF7A0C092EFC7C3900820629 /* VantaSpeechWidgetsExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		AFMSAL0012EFD000000000001 /* MSAL in Frameworks */ = {isa = PBXBuildFile; productRef = AFMSAL0012EFD000000000002 /* MSAL */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -106,6 +107,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AFMSAL0012EFD000000000001 /* MSAL in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -185,6 +187,7 @@
 			);
 			name = "Vanta Speech";
 			packageProductDependencies = (
+				AFMSAL0012EFD000000000002 /* MSAL */,
 			);
 			productName = "Vanta Speech";
 			productReference = AF8E63B22EFB4D7A00DA1C99 /* Vanta Speech.app */;
@@ -218,6 +221,7 @@
 			mainGroup = AF8E63A92EFB4D7A00DA1C99;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				AFMSAL0012EFD000000000003 /* XCRemoteSwiftPackageReference "microsoft-authentication-library-for-objc" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = AF8E63B32EFB4D7A00DA1C99 /* Products */;
@@ -577,6 +581,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		AFMSAL0012EFD000000000003 /* XCRemoteSwiftPackageReference "microsoft-authentication-library-for-objc" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/AzureAD/microsoft-authentication-library-for-objc";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.6.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		AFMSAL0012EFD000000000002 /* MSAL */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AFMSAL0012EFD000000000003 /* XCRemoteSwiftPackageReference "microsoft-authentication-library-for-objc" */;
+			productName = MSAL;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = AF8E63AA2EFB4D7A00DA1C99 /* Project object */;
 }
