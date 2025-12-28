@@ -71,6 +71,10 @@ struct VantaSpeechApp: App {
             }
             .tint(.pinkVibrant)
             .vantaThemed()
+            .onOpenURL { url in
+                // Обработка MSAL callback для Outlook авторизации
+                _ = MSALAuthManager.handleMSALResponse(url, sourceApplication: nil)
+            }
         }
         .modelContainer(sharedModelContainer)
 

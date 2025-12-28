@@ -92,6 +92,17 @@ struct SettingsView: View {
                 }
 
                 Section("Интеграции") {
+                    // Outlook Calendar
+                    NavigationLink {
+                        OutlookCalendarSettingsView()
+                    } label: {
+                        IntegrationRow(
+                            name: "Outlook Calendar",
+                            icon: "calendar",
+                            isConnected: OutlookCalendarManager.shared.isConnected
+                        )
+                    }
+
                     NavigationLink {
                         IntegrationSettingsView(
                             service: "Confluence",

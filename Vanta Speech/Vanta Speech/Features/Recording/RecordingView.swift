@@ -51,11 +51,14 @@ struct RecordingView: View {
             .sheet(isPresented: $showRecordingSheet) {
                 if let preset = coordinator.currentPreset {
                     ActiveRecordingSheet(preset: preset, onStop: stopRecording)
+                        .environmentObject(recorder)
+                        .environmentObject(coordinator)
                 }
             }
             .sheet(isPresented: $showRealtimeRecordingSheet) {
                 if let preset = coordinator.currentPreset {
                     RealtimeRecordingSheet(preset: preset, onStop: stopRealtimeRecording)
+                        .environmentObject(coordinator)
                 }
             }
             .alert("Ошибка", isPresented: $showError) {
