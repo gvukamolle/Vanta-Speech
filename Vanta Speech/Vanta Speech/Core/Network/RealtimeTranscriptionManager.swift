@@ -63,6 +63,9 @@ final class RealtimeTranscriptionManager: ObservableObject {
     private var isProcessing = false
     private var currentTask: Task<Void, Never>?
 
+    /// URL всех обработанных чанков (для последующего мержа в один файл)
+    private var processedChunkURLs: [URL] = []
+
     private struct ChunkItem: Identifiable {
         let id: UUID
         let url: URL
@@ -104,7 +107,7 @@ final class RealtimeTranscriptionManager: ObservableObject {
         // Очищаем текущий interim текст
         currentInterimText = ""
 
-        print("[RealtimeTranscriptionManager] Chunk enqueued with preview: '\(previewText.prefix(30))...'")
+        debugLog("Chunk enqueued with preview: '\(previewText.prefix(30))...'", module: "RealtimeTranscriptionManager")
 
         processNextChunkIfNeeded()
     }
@@ -126,7 +129,8 @@ final class RealtimeTranscriptionManager: ObservableObject {
         status = .idle
         pendingChunksCount = 0
         isProcessing = false
-        print("[RealtimeTranscriptionManager] Reset")
+        cleanupChunks()  // Очищаем временные файлы чанков
+        debugLog("Reset", module: "RealtimeTranscriptionManager")
     }
 
     /// Ожидание завершения всех pending транскрипций
@@ -134,7 +138,7 @@ final class RealtimeTranscriptionManager: ObservableObject {
         while !chunkQueue.isEmpty || isProcessing {
             try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
         }
-        print("[RealtimeTranscriptionManager] All chunks processed")
+        debugLog("All chunks processed", module: "RealtimeTranscriptionManager")
     }
 
     /// Проверить есть ли еще чанки в обработке
@@ -145,6 +149,21 @@ final class RealtimeTranscriptionManager: ObservableObject {
     /// Количество успешно обработанных параграфов
     var completedParagraphsCount: Int {
         paragraphs.filter { $0.status == .completed }.count
+    }
+
+    /// Получить URL всех обработанных чанков (для мержа в один файл)
+    func getProcessedChunkURLs() -> [URL] {
+        return processedChunkURLs
+    }
+
+    /// Очистить все временные файлы чанков
+    func cleanupChunks() {
+        let count = processedChunkURLs.count
+        for url in processedChunkURLs {
+            try? FileManager.default.removeItem(at: url)
+        }
+        processedChunkURLs.removeAll()
+        debugLog("Cleaned up \(count) chunk files", module: "RealtimeTranscriptionManager")
     }
 
     // MARK: - Private Methods
@@ -172,7 +191,7 @@ final class RealtimeTranscriptionManager: ObservableObject {
     }
 
     private func processChunk(_ chunk: ChunkItem) async {
-        print("[RealtimeTranscriptionManager] Processing chunk: \(chunk.url.lastPathComponent)")
+        debugLog("Processing chunk: \(chunk.url.lastPathComponent)", module: "RealtimeTranscriptionManager")
 
         do {
             // Транскрибируем аудио через Whisper
@@ -185,14 +204,15 @@ final class RealtimeTranscriptionManager: ObservableObject {
             if let index = paragraphs.firstIndex(where: { $0.id == chunk.id }) {
                 paragraphs[index].text = formattedResult
                 paragraphs[index].status = .completed
-                print("[RealtimeTranscriptionManager] Chunk transcribed: '\(formattedResult.prefix(50))...'")
+                debugLog("Chunk transcribed: '\(formattedResult.prefix(50))...'", module: "RealtimeTranscriptionManager")
             }
 
-            // Удаляем временный файл чанка
-            try? FileManager.default.removeItem(at: chunk.url)
+            // Сохраняем URL чанка для последующего мержа (НЕ удаляем файл!)
+            processedChunkURLs.append(chunk.url)
 
         } catch {
-            print("[RealtimeTranscriptionManager] Failed to transcribe chunk: \(error)")
+            debugLog("Failed to transcribe chunk: \(error)", module: "RealtimeTranscriptionManager", level: .error)
+            debugCaptureError(error, context: "Realtime chunk transcription")
 
             // Помечаем параграф как failed
             if let index = paragraphs.firstIndex(where: { $0.id == chunk.id }) {
@@ -201,8 +221,8 @@ final class RealtimeTranscriptionManager: ObservableObject {
 
             status = .error(error.localizedDescription)
 
-            // Удаляем файл даже при ошибке
-            try? FileManager.default.removeItem(at: chunk.url)
+            // Сохраняем URL даже при ошибке транскрипции (аудио всё равно валидное)
+            processedChunkURLs.append(chunk.url)
         }
     }
 

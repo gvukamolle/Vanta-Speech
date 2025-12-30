@@ -25,7 +25,11 @@ struct RecordingActivityAttributes: ActivityAttributes {
         /// Текущий статус
         var status: RecordingActivityStatus
 
-        /// Длительность записи (обновляется раз в секунду)
+        /// Дата для автономного таймера (nil при паузе/остановке)
+        /// Используется с Text(date, style: .timer) для обновления без main app
+        var timerReferenceDate: Date?
+
+        /// Длительность записи (для статического отображения при паузе)
         var duration: TimeInterval
 
         /// Уровень аудио (0.0 - 1.0)

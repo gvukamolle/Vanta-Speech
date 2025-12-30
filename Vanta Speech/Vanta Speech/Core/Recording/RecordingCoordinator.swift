@@ -112,11 +112,12 @@ final class RecordingCoordinator: ObservableObject {
                 // Первый апдейт сразу после старта
                 await liveActivityManager.updateRecording(duration: 0, audioLevel: 0)
             } catch {
-                print("[RecordingCoordinator] Failed to start Live Activity: \(error)")
+                debugLog("Failed to start Live Activity: \(error)", module: "RecordingCoordinator", level: .error)
+                debugCaptureError(error, context: "Starting Live Activity")
             }
         }
 
-        print("[RecordingCoordinator] Recording started with preset: \(preset.displayName)")
+        debugLog("Recording started with preset: \(preset.displayName)", module: "RecordingCoordinator")
     }
 
     /// Продолжить запись существующей записи (для склейки)
@@ -159,10 +160,11 @@ final class RecordingCoordinator: ObservableObject {
                 audioLevel: 0
             )
         } catch {
-            print("[RecordingCoordinator] Failed to start Live Activity: \(error)")
+            debugLog("Failed to start Live Activity: \(error)", module: "RecordingCoordinator", level: .error)
+            debugCaptureError(error, context: "Starting Live Activity for continuation")
         }
 
-        print("[RecordingCoordinator] Continuing recording: \(recording.id), original duration: \(recording.duration)s")
+        debugLog("Continuing recording: \(recording.id), original duration: \(recording.duration)s", module: "RecordingCoordinator")
     }
 
     /// Поставить запись на паузу
@@ -223,9 +225,10 @@ final class RecordingCoordinator: ObservableObject {
                     )
                     finalURL = mergeResult.url
                     finalDuration = mergeResult.duration
-                    print("[RecordingCoordinator] Audio files merged, total duration: \(finalDuration)s")
+                    debugLog("Audio files merged, total duration: \(finalDuration)s", module: "RecordingCoordinator")
                 } catch {
-                    print("[RecordingCoordinator] Failed to merge audio: \(error)")
+                    debugLog("Failed to merge audio: \(error)", module: "RecordingCoordinator", level: .error)
+                    debugCaptureError(error, context: "Merging audio files")
                     // Если склейка не удалась, используем новый файл
                 }
 
@@ -259,7 +262,7 @@ final class RecordingCoordinator: ObservableObject {
                         currentPreset = nil
                         currentRecordingId = nil
 
-                        print("[RecordingCoordinator] Continued recording stopped, ready for transcription")
+                        debugLog("Continued recording stopped, ready for transcription", module: "RecordingCoordinator")
                         return recording
                     }
                 }
@@ -300,11 +303,16 @@ final class RecordingCoordinator: ObservableObject {
             currentPreset = nil
             currentRecordingId = nil
 
-            print("[RecordingCoordinator] Recording stopped, ready for transcription")
+            debugLog("Recording stopped, ready for transcription", module: "RecordingCoordinator")
             return recording
 
         case .failure(let error):
-            print("[RecordingCoordinator] Failed to stop recording: \(error)")
+            debugLog("Failed to stop recording: \(error)", module: "RecordingCoordinator", level: .error)
+            debugCaptureError(error, context: "Stopping recording")
+
+            // Даже при ошибке закрываем Live Activity
+            await liveActivityManager.endActivityImmediately()
+
             continuationData = nil
             isContinuingRecording = false
             currentPreset = nil
@@ -339,7 +347,7 @@ final class RecordingCoordinator: ObservableObject {
         // Подписываемся на обновления от SpeechRecognizer (без Live Activity в real-time режиме)
         setupRealtimeSpeechObservers()
 
-        print("[RecordingCoordinator] Realtime recording started with preset: \(preset.displayName)")
+        debugLog("Realtime recording started with preset: \(preset.displayName)", module: "RecordingCoordinator")
     }
 
     /// Настройка обновлений от SpeechRecognizer
@@ -376,12 +384,30 @@ final class RecordingCoordinator: ObservableObject {
         // Получаем финальную транскрипцию
         let finalTranscription = manager.getFinalTranscription()
 
-        // Создаём запись (без audioFileURL, так как real-time не сохраняет полный файл)
+        // Мержим все чанки в один аудиофайл
+        let chunkURLs = manager.getProcessedChunkURLs()
+        var finalAudioURL = ""
+
+        if !chunkURLs.isEmpty {
+            do {
+                let mergedURL = try await audioRecorder.mergeMultipleAudioFiles(urls: chunkURLs)
+                finalAudioURL = mergedURL.path
+                debugLog("Merged \(chunkURLs.count) chunks into: \(mergedURL.lastPathComponent)", module: "RecordingCoordinator")
+            } catch {
+                debugLog("Failed to merge chunks: \(error)", module: "RecordingCoordinator", level: .error)
+                debugCaptureError(error, context: "Merging realtime audio chunks")
+            }
+        }
+
+        // Очищаем временные файлы чанков
+        manager.cleanupChunks()
+
+        // Создаём запись с audioFileURL (теперь содержит путь к merged файлу)
         let recording = Recording(
             id: recordingId,
             title: "\(preset.displayName) \(formatDate(Date()))",
             duration: duration,
-            audioFileURL: "",  // Real-time режим не сохраняет полный аудиофайл
+            audioFileURL: finalAudioURL,
             transcriptionText: finalTranscription,
             preset: preset
         )
@@ -394,7 +420,7 @@ final class RecordingCoordinator: ObservableObject {
         if !finalTranscription.isEmpty {
             pendingTranscription = PendingTranscription(
                 recordingId: recordingId,
-                audioURL: URL(fileURLWithPath: ""),  // Не используется для real-time
+                audioURL: URL(fileURLWithPath: finalAudioURL),
                 duration: duration,
                 preset: preset
             )
@@ -406,7 +432,7 @@ final class RecordingCoordinator: ObservableObject {
         currentPreset = nil
         currentRecordingId = nil
 
-        print("[RecordingCoordinator] Realtime recording stopped, paragraphs: \(manager.completedParagraphsCount)")
+        debugLog("Realtime recording stopped, paragraphs: \(manager.completedParagraphsCount), audioFile: \(finalAudioURL.isEmpty ? "none" : "saved")", module: "RecordingCoordinator")
 
         return recording
     }
@@ -423,7 +449,7 @@ final class RecordingCoordinator: ObservableObject {
             let transcriptionText = manager.getFinalTranscription()
 
             guard !transcriptionText.isEmpty else {
-                print("[RecordingCoordinator] No transcription text to summarize")
+                debugLog("No transcription text to summarize", module: "RecordingCoordinator", level: .warning)
                 isTranscribing = false
                 realtimeManager = nil
                 pendingTranscription = nil
@@ -448,10 +474,11 @@ final class RecordingCoordinator: ObservableObject {
             pendingTranscription = nil
             isTranscribing = false
 
-            print("[RecordingCoordinator] Realtime summarization completed")
+            debugLog("Realtime summarization completed", module: "RecordingCoordinator")
 
         } catch {
-            print("[RecordingCoordinator] Realtime summarization failed: \(error)")
+            debugLog("Realtime summarization failed: \(error)", module: "RecordingCoordinator", level: .error)
+            debugCaptureError(error, context: "Realtime summarization")
             realtimeManager = nil
             pendingTranscription = nil
             isTranscribing = false
@@ -462,15 +489,15 @@ final class RecordingCoordinator: ObservableObject {
 
     /// Начать транскрипцию pending записи
     func startTranscription() async {
-        print("[RecordingCoordinator] startTranscription called")
+        debugLog("startTranscription called", module: "RecordingCoordinator")
 
         guard let pending = pendingTranscription else {
-            print("[RecordingCoordinator] No pending transcription - pendingTranscription is nil!")
+            debugLog("No pending transcription - pendingTranscription is nil!", module: "RecordingCoordinator", level: .warning)
             return
         }
 
-        print("[RecordingCoordinator] Starting transcription for recording: \(pending.recordingId)")
-        print("[RecordingCoordinator] Audio URL: \(pending.audioURL)")
+        debugLog("Starting transcription for recording: \(pending.recordingId)", module: "RecordingCoordinator")
+        debugLog("Audio URL: \(pending.audioURL)", module: "RecordingCoordinator")
 
         isTranscribing = true
 
@@ -509,10 +536,11 @@ final class RecordingCoordinator: ObservableObject {
             pendingTranscription = nil
             isTranscribing = false
 
-            print("[RecordingCoordinator] Transcription completed successfully")
+            debugLog("Transcription completed successfully", module: "RecordingCoordinator")
 
         } catch {
-            print("[RecordingCoordinator] Transcription failed: \(error)")
+            debugLog("Transcription failed: \(error)", module: "RecordingCoordinator", level: .error)
+            debugCaptureError(error, context: "Transcription")
             // Завершаем Live Activity с ошибкой
             await liveActivityManager.endActivityImmediately()
             pendingTranscription = nil
@@ -553,7 +581,8 @@ final class RecordingCoordinator: ObservableObject {
                 try context.save()
             }
         } catch {
-            print("[RecordingCoordinator] Failed to update recording: \(error)")
+            debugLog("Failed to update recording: \(error)", module: "RecordingCoordinator", level: .error)
+            debugCaptureError(error, context: "Updating recording in database")
         }
     }
 
@@ -589,7 +618,7 @@ final class RecordingCoordinator: ObservableObject {
                 }
             },
             onStartTranscription: { [weak self] in
-                print("[RecordingCoordinator] Received Darwin notification: startTranscription")
+                debugLog("Received Darwin notification: startTranscription", module: "RecordingCoordinator")
                 Task { @MainActor in
                     await self?.startTranscription()
                 }
@@ -611,13 +640,13 @@ final class RecordingCoordinator: ObservableObject {
     func dismissActivity() async {
         pendingTranscription = nil
         await liveActivityManager.endActivityImmediately()
-        print("[RecordingCoordinator] Activity dismissed without transcription")
+        debugLog("Activity dismissed without transcription", module: "RecordingCoordinator")
     }
 
     /// Скрыть Live Activity (во время транскрипции продолжает работать в фоне)
     func hideActivity() async {
         await liveActivityManager.endActivityImmediately()
-        print("[RecordingCoordinator] Activity hidden, transcription continues in background")
+        debugLog("Activity hidden, transcription continues in background", module: "RecordingCoordinator")
     }
 
     private func setupAudioRecorderObservers() {
@@ -656,17 +685,17 @@ final class RecordingCoordinator: ObservableObject {
 
         // Игнорируем старые ключи (> 10 секунд)
         if age > 10 {
-            print("[RecordingCoordinator] Ignoring stale pending preset (age: \(Int(age))s)")
+            debugLog("Ignoring stale pending preset (age: \(Int(age))s)", module: "RecordingCoordinator")
             return
         }
 
         guard let preset = RecordingPreset(rawValue: presetId) else {
-            print("[RecordingCoordinator] Invalid preset id from shortcut: \(presetId)")
+            debugLog("Invalid preset id from shortcut: \(presetId)", module: "RecordingCoordinator", level: .warning)
             return
         }
 
         // Начинаем запись
-        print("[RecordingCoordinator] Starting recording from shortcut (age: \(Int(age))s)")
+        debugLog("Starting recording from shortcut (age: \(Int(age))s)", module: "RecordingCoordinator")
         Task {
             try? await startRecording(preset: preset)
         }

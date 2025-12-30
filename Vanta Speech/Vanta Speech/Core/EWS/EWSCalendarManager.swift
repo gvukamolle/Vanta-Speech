@@ -85,10 +85,11 @@ final class EWSCalendarManager: ObservableObject {
             cachedEvents = events.sorted { $0.startDate < $1.startDate }
             lastSyncDate = Date()
 
-            print("[EWSCalendarManager] Synced \(events.count) events")
+            debugLog("Synced \(events.count) events", module: "EWSCalendarManager")
         } catch {
             lastError = error
-            print("[EWSCalendarManager] Sync failed: \(error.localizedDescription)")
+            debugLog("Sync failed: \(error.localizedDescription)", module: "EWSCalendarManager", level: .error)
+            debugCaptureError(error, context: "EWSCalendarManager sync")
         }
 
         isSyncing = false
@@ -160,7 +161,7 @@ final class EWSCalendarManager: ObservableObject {
             cachedEvents[index] = updated
         }
 
-        print("[EWSCalendarManager] Updated event body for: \(event.subject)")
+        debugLog("Updated event body for: \(event.subject)", module: "EWSCalendarManager")
     }
 
     /// Send email to event attendees
@@ -195,7 +196,7 @@ final class EWSCalendarManager: ObservableObject {
 
         try await service.sendEmail(email)
 
-        print("[EWSCalendarManager] Sent email to \(recipients.count) recipients")
+        debugLog("Sent email to \(recipients.count) recipients", module: "EWSCalendarManager")
     }
 
     /// Create a new calendar event
@@ -207,7 +208,7 @@ final class EWSCalendarManager: ObservableObject {
         let itemId = try await service.createEvent(event)
         await syncEvents() // Refresh cache
 
-        print("[EWSCalendarManager] Created event: \(event.subject)")
+        debugLog("Created event: \(event.subject)", module: "EWSCalendarManager")
         return itemId
     }
 
@@ -257,7 +258,8 @@ final class EWSCalendarManager: ObservableObject {
             let client = try authManager.createClient()
             service = EWSCalendarService(client: client)
         } catch {
-            print("[EWSCalendarManager] Failed to create service: \(error)")
+            debugLog("Failed to create service: \(error)", module: "EWSCalendarManager", level: .error)
+            debugCaptureError(error, context: "EWSCalendarManager setupService")
             lastError = error
         }
     }

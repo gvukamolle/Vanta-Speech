@@ -79,13 +79,14 @@ final class EWSAuthManager: ObservableObject {
             self.credentials = credentials
             self.isAuthenticated = true
 
-            print("[EWSAuthManager] Authentication successful")
+            debugLog("Authentication successful", module: "EWSAuthManager")
             return true
 
         } catch {
             lastError = error
             isAuthenticated = false
-            print("[EWSAuthManager] Authentication failed: \(error.localizedDescription)")
+            debugLog("Authentication failed: \(error.localizedDescription)", module: "EWSAuthManager", level: .error)
+            debugCaptureError(error, context: "EWSAuthManager authenticate")
             return false
         }
     }
@@ -96,7 +97,7 @@ final class EWSAuthManager: ObservableObject {
         credentials = nil
         isAuthenticated = false
         lastError = nil
-        print("[EWSAuthManager] Signed out")
+        debugLog("Signed out", module: "EWSAuthManager")
     }
 
     /// Get current credentials or throw if not authenticated
@@ -119,7 +120,7 @@ final class EWSAuthManager: ObservableObject {
         if let stored = keychainManager.loadEWSCredentials() {
             credentials = stored
             isAuthenticated = true
-            print("[EWSAuthManager] Loaded stored credentials for \(stored.username)")
+            debugLog("Loaded stored credentials for \(stored.username)", module: "EWSAuthManager")
         }
     }
 }

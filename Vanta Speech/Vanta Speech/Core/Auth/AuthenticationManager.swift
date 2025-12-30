@@ -42,10 +42,12 @@ final class AuthenticationManager: ObservableObject {
             // LDAP specific errors with full description
             self.error = authError.errorDescription ?? authError.localizedDescription
             isLoading = false
+            debugCaptureError(authError, context: "LDAP authentication")
         } catch {
             // Generic errors - show full details
             self.error = "\(error.localizedDescription)\n\nПодробности: \(String(describing: error))"
             isLoading = false
+            debugCaptureError(error, context: "Authentication")
         }
     }
 

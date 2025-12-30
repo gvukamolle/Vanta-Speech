@@ -156,12 +156,7 @@ struct SettingsView: View {
                 }
 
                 Section("О приложении") {
-                    HStack {
-                        Text("Версия")
-                        Spacer()
-                        Text("1.0.0")
-                            .foregroundStyle(.secondary)
-                    }
+                    VersionTapView()
                 }
 
                 Section {

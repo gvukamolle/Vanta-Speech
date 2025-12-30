@@ -34,7 +34,7 @@ final class CalendarSyncService {
     /// Сбросить delta link (принудительная полная синхронизация)
     func resetSync() {
         deltaLink = nil
-        print("[CalendarSyncService] Sync reset, next sync will be full")
+        debugLog("Sync reset, next sync will be full", module: "CalendarSyncService")
     }
 
     /// Дата последней синхронизации
@@ -45,7 +45,7 @@ final class CalendarSyncService {
     // MARK: - Full Sync
 
     private func fullSync() async throws -> SyncResult {
-        print("[CalendarSyncService] Starting full sync...")
+        debugLog("Starting full sync...", module: "CalendarSyncService")
 
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
@@ -68,7 +68,7 @@ final class CalendarSyncService {
         let result = try await fetchAllPages(startingFrom: url)
         storage.saveLastSyncDate(Date())
 
-        print("[CalendarSyncService] Full sync completed: \(result.updatedEvents.count) events")
+        debugLog("Full sync completed: \(result.updatedEvents.count) events", module: "CalendarSyncService")
         return SyncResult(
             updatedEvents: result.updatedEvents,
             deletedEventIds: result.deletedEventIds,
@@ -79,7 +79,7 @@ final class CalendarSyncService {
     // MARK: - Incremental Sync
 
     private func incrementalSync(deltaLink: String) async throws -> SyncResult {
-        print("[CalendarSyncService] Starting incremental sync...")
+        debugLog("Starting incremental sync...", module: "CalendarSyncService")
 
         guard let url = URL(string: deltaLink) else {
             // Невалидный delta link — делаем full sync
@@ -91,7 +91,7 @@ final class CalendarSyncService {
             let result = try await fetchAllPages(startingFrom: url)
             storage.saveLastSyncDate(Date())
 
-            print("[CalendarSyncService] Incremental sync completed: \(result.updatedEvents.count) updated, \(result.deletedEventIds.count) deleted")
+            debugLog("Incremental sync completed: \(result.updatedEvents.count) updated, \(result.deletedEventIds.count) deleted", module: "CalendarSyncService")
             return SyncResult(
                 updatedEvents: result.updatedEvents,
                 deletedEventIds: result.deletedEventIds,
@@ -99,7 +99,7 @@ final class CalendarSyncService {
             )
         } catch GraphError.httpError(statusCode: 410, _) {
             // 410 Gone = delta link expired
-            print("[CalendarSyncService] Delta link expired, performing full sync")
+            debugLog("Delta link expired, performing full sync", module: "CalendarSyncService", level: .warning)
             self.deltaLink = nil
             return try await fullSync()
         }

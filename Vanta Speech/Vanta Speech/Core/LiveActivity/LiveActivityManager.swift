@@ -32,17 +32,17 @@ final class LiveActivityManager: ObservableObject {
         recordingId: UUID,
         preset: RecordingPreset
     ) throws {
-        print("[LiveActivityManager] Attempting to start activity...")
-        print("[LiveActivityManager] areActivitiesEnabled: \(areActivitiesEnabled)")
+        debugLog("Attempting to start activity...", module: "LiveActivityManager")
+        debugLog("areActivitiesEnabled: \(areActivitiesEnabled)", module: "LiveActivityManager")
 
         guard areActivitiesEnabled else {
-            print("[LiveActivityManager] ERROR: Live Activities are NOT enabled on this device")
+            debugLog("ERROR: Live Activities are NOT enabled on this device", module: "LiveActivityManager", level: .error)
             throw LiveActivityError.notEnabled
         }
 
         // Завершаем предыдущую активность
         if currentActivity != nil {
-            print("[LiveActivityManager] Ending previous activity first...")
+            debugLog("Ending previous activity first...", module: "LiveActivityManager")
             Task {
                 await endActivityImmediately()
             }
@@ -57,6 +57,7 @@ final class LiveActivityManager: ObservableObject {
 
         let initialState = RecordingActivityAttributes.ContentState(
             status: .recording,
+            timerReferenceDate: Date(),  // Автономный таймер начинается с текущего момента
             duration: 0,
             audioLevel: 0,
             transcriptionProgress: nil,
@@ -68,7 +69,7 @@ final class LiveActivityManager: ObservableObject {
             staleDate: nil
         )
 
-        print("[LiveActivityManager] Requesting activity with preset: \(preset.displayName)")
+        debugLog("Requesting activity with preset: \(preset.displayName)", module: "LiveActivityManager")
 
         do {
             currentActivity = try Activity.request(
@@ -77,10 +78,11 @@ final class LiveActivityManager: ObservableObject {
                 pushType: nil
             )
             isActivityRunning = true
-            print("[LiveActivityManager] SUCCESS! Activity started: \(currentActivity?.id ?? "unknown")")
+            debugLog("SUCCESS! Activity started: \(currentActivity?.id ?? "unknown")", module: "LiveActivityManager")
         } catch {
-            print("[LiveActivityManager] FAILED to start activity: \(error)")
-            print("[LiveActivityManager] Error details: \(error.localizedDescription)")
+            debugLog("FAILED to start activity: \(error)", module: "LiveActivityManager", level: .error)
+            debugLog("Error details: \(error.localizedDescription)", module: "LiveActivityManager", level: .error)
+            debugCaptureError(error, context: "Starting Live Activity")
             throw error
         }
     }
@@ -93,8 +95,12 @@ final class LiveActivityManager: ObservableObject {
             return
         }
 
+        // Рассчитываем timerReferenceDate так, чтобы автономный таймер показывал правильное время
+        let timerReferenceDate = Date().addingTimeInterval(-duration)
+
         await updateState(
             status: .recording,
+            timerReferenceDate: timerReferenceDate,
             duration: duration,
             audioLevel: audioLevel
         )
@@ -104,6 +110,7 @@ final class LiveActivityManager: ObservableObject {
     func updatePaused(duration: TimeInterval) async {
         await updateState(
             status: .paused,
+            timerReferenceDate: nil,  // Останавливаем автономный таймер
             duration: duration,
             audioLevel: 0
         )
@@ -113,6 +120,7 @@ final class LiveActivityManager: ObservableObject {
     func updateStopped(duration: TimeInterval, audioFileURL: String) async {
         await updateState(
             status: .stopped,
+            timerReferenceDate: nil,  // Таймер остановлен
             duration: duration,
             audioLevel: 0,
             audioFileURL: audioFileURL
@@ -125,6 +133,7 @@ final class LiveActivityManager: ObservableObject {
 
         let newState = RecordingActivityAttributes.ContentState(
             status: .transcribing,
+            timerReferenceDate: nil,  // Таймер остановлен
             duration: activity.content.state.duration,
             audioLevel: 0,
             transcriptionProgress: progress,
@@ -140,6 +149,7 @@ final class LiveActivityManager: ObservableObject {
 
         let finalState = RecordingActivityAttributes.ContentState(
             status: .completed,
+            timerReferenceDate: nil,  // Таймер остановлен
             duration: activity.content.state.duration,
             audioLevel: 0,
             transcriptionProgress: 1.0,
@@ -153,7 +163,7 @@ final class LiveActivityManager: ObservableObject {
 
         currentActivity = nil
         isActivityRunning = false
-        print("[LiveActivityManager] Activity ended with completion")
+        debugLog("Activity ended with completion", module: "LiveActivityManager")
     }
 
     /// Немедленное завершение
@@ -167,13 +177,14 @@ final class LiveActivityManager: ObservableObject {
 
         currentActivity = nil
         isActivityRunning = false
-        print("[LiveActivityManager] Activity ended immediately")
+        debugLog("Activity ended immediately", module: "LiveActivityManager")
     }
 
     // MARK: - Private Methods
 
     private func updateState(
         status: RecordingActivityStatus,
+        timerReferenceDate: Date?,
         duration: TimeInterval,
         audioLevel: Float,
         transcriptionProgress: Double? = nil,
@@ -183,6 +194,7 @@ final class LiveActivityManager: ObservableObject {
 
         let newState = RecordingActivityAttributes.ContentState(
             status: status,
+            timerReferenceDate: timerReferenceDate,
             duration: duration,
             audioLevel: audioLevel,
             transcriptionProgress: transcriptionProgress,
@@ -197,7 +209,7 @@ final class LiveActivityManager: ObservableObject {
         if let existing = activities.first {
             currentActivity = existing
             isActivityRunning = true
-            print("[LiveActivityManager] Restored activity: \(existing.id)")
+            debugLog("Restored activity: \(existing.id)", module: "LiveActivityManager")
         }
     }
 }

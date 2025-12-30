@@ -346,12 +346,7 @@ struct iPadSettingsContentView: View {
             sectionHeader("О приложении")
 
             VStack(alignment: .leading, spacing: 16) {
-                HStack {
-                    Text("Версия")
-                    Spacer()
-                    Text("1.0.0")
-                        .foregroundStyle(.secondary)
-                }
+                VersionTapView()
 
                 Divider()
 

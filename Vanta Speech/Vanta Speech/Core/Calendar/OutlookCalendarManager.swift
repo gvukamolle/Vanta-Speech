@@ -85,13 +85,14 @@ final class OutlookCalendarManager: ObservableObject {
     func connect(from viewController: UIViewController) async {
         do {
             _ = try await authManager.signIn(from: viewController)
-            print("[OutlookCalendarManager] Connected successfully")
+            debugLog("Connected successfully", module: "OutlookCalendarManager")
         } catch MSALAuthError.userCanceled {
             // Пользователь отменил — не показываем ошибку
-            print("[OutlookCalendarManager] User canceled sign in")
+            debugLog("User canceled sign in", module: "OutlookCalendarManager", level: .warning)
         } catch {
             self.error = error.localizedDescription
-            print("[OutlookCalendarManager] Connection failed: \(error)")
+            debugLog("Connection failed: \(error)", module: "OutlookCalendarManager", level: .error)
+            debugCaptureError(error, context: "OutlookCalendarManager.connect")
         }
     }
 
@@ -100,11 +101,11 @@ final class OutlookCalendarManager: ObservableObject {
     func disconnect(from viewController: UIViewController) async {
         do {
             try await authManager.signOut(from: viewController)
-            print("[OutlookCalendarManager] Disconnected successfully")
+            debugLog("Disconnected successfully", module: "OutlookCalendarManager")
         } catch {
             // Fallback на локальный logout
             authManager.signOutLocally()
-            print("[OutlookCalendarManager] Fallback to local signout: \(error)")
+            debugLog("Fallback to local signout: \(error)", module: "OutlookCalendarManager", level: .warning)
         }
     }
 
@@ -114,12 +115,12 @@ final class OutlookCalendarManager: ObservableObject {
     @discardableResult
     func performSync() async -> Bool {
         guard isConnected, let syncService = syncService else {
-            print("[OutlookCalendarManager] Cannot sync: not connected")
+            debugLog("Cannot sync: not connected", module: "OutlookCalendarManager", level: .warning)
             return false
         }
 
         guard !isSyncing else {
-            print("[OutlookCalendarManager] Sync already in progress")
+            debugLog("Sync already in progress", module: "OutlookCalendarManager", level: .warning)
             return false
         }
 
@@ -141,16 +142,17 @@ final class OutlookCalendarManager: ObservableObject {
 
             lastSyncDate = syncService.lastSyncDate
 
-            print("[OutlookCalendarManager] Sync completed: \(cachedEvents.count) events cached")
+            debugLog("Sync completed: \(cachedEvents.count) events cached", module: "OutlookCalendarManager")
             return true
 
         } catch MSALAuthError.interactionRequired {
             self.error = "Требуется повторный вход в Outlook"
-            print("[OutlookCalendarManager] Sync failed: interaction required")
+            debugLog("Sync failed: interaction required", module: "OutlookCalendarManager", level: .warning)
             return false
         } catch {
             self.error = error.localizedDescription
-            print("[OutlookCalendarManager] Sync failed: \(error)")
+            debugLog("Sync failed: \(error)", module: "OutlookCalendarManager", level: .error)
+            debugCaptureError(error, context: "OutlookCalendarManager.performSync")
             return false
         }
     }

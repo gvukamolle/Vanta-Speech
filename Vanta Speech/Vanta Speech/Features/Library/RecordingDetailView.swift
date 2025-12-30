@@ -417,6 +417,7 @@ struct RecordingDetailView: View {
                     showError = true
                     recording.isUploading = false
                     isTranscribing = false
+                    debugCaptureError(error, context: "Transcription in RecordingDetailView")
                 }
             }
         }
@@ -468,6 +469,7 @@ struct RecordingDetailView: View {
             } catch {
                 errorMessage = error.localizedDescription
                 showError = true
+                debugCaptureError(error, context: "Continue recording")
             }
         }
     }
@@ -621,17 +623,17 @@ struct ContentSheetView: View {
 
     private func exportToConfluence() {
         // TODO: Implement Confluence export
-        print("[ContentSheetView] Export to Confluence: \(title)")
+        debugLog("Export to Confluence: \(title)", module: "ContentSheetView")
     }
 
     private func exportToNotion() {
         // TODO: Implement Notion export
-        print("[ContentSheetView] Export to Notion: \(title)")
+        debugLog("Export to Notion: \(title)", module: "ContentSheetView")
     }
 
     private func exportToGoogleDocs() {
         // TODO: Implement Google Docs export
-        print("[ContentSheetView] Export to Google Docs: \(title)")
+        debugLog("Export to Google Docs: \(title)", module: "ContentSheetView")
     }
 }
 

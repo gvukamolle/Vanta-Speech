@@ -245,7 +245,7 @@ struct RealtimeRecordingSheet: View {
                 // Приостанавливаем запись при сворачивании
                 coordinator.pauseRecording()
                 wasBackgrounded = true
-                print("[RealtimeRecordingSheet] App backgrounded, recording paused")
+                debugLog("App backgrounded, recording paused", module: "RealtimeRecordingSheet")
             }
         case .active:
             if wasBackgrounded {

@@ -8,7 +8,7 @@ actor TranscriptionService {
     private static let apiKey = "sk-FtnWXOh3UZATJL7uNwwh6DgQdpHGWarH"
 
     // Models
-    private static let transcriptionModel = "gagaam_v3"
+    private static let transcriptionModel = "gigaam-v3"
     private static let summaryModel = "cod/gpt-oss:120b"
 
     private let session: URLSession

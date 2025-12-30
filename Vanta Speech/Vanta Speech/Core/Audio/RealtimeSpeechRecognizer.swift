@@ -145,7 +145,7 @@ final class RealtimeSpeechRecognizer: NSObject, ObservableObject {
         // Запрещаем гашение экрана во время записи
         UIApplication.shared.isIdleTimerDisabled = true
 
-        print("[RealtimeSpeechRecognizer] Recording started")
+        debugLog("Recording started", module: "RealtimeSpeechRecognizer")
     }
 
     func stopRecording() -> TimeInterval {
@@ -186,7 +186,7 @@ final class RealtimeSpeechRecognizer: NSObject, ObservableObject {
         // Разрешаем гашение экрана после остановки записи
         UIApplication.shared.isIdleTimerDisabled = false
 
-        print("[RealtimeSpeechRecognizer] Recording stopped, duration: \(duration)s")
+        debugLog("Recording stopped, duration: \(duration)s", module: "RealtimeSpeechRecognizer")
 
         return duration
     }
@@ -199,7 +199,7 @@ final class RealtimeSpeechRecognizer: NSObject, ObservableObject {
         metricsTimer?.invalidate()
         isInterrupted = true
 
-        print("[RealtimeSpeechRecognizer] Recording paused")
+        debugLog("Recording paused", module: "RealtimeSpeechRecognizer")
     }
 
     func resumeRecording() {
@@ -210,7 +210,7 @@ final class RealtimeSpeechRecognizer: NSObject, ObservableObject {
         resetPauseTimer()
         isInterrupted = false
 
-        print("[RealtimeSpeechRecognizer] Recording resumed")
+        debugLog("Recording resumed", module: "RealtimeSpeechRecognizer")
     }
 
     // MARK: - Private Methods
@@ -275,13 +275,14 @@ final class RealtimeSpeechRecognizer: NSObject, ObservableObject {
 
         resetPauseTimer()
 
-        print("[RealtimeSpeechRecognizer] New phrase started: \(chunkURL.lastPathComponent)")
+        debugLog("New phrase started: \(chunkURL.lastPathComponent)", module: "RealtimeSpeechRecognizer")
     }
 
     private func handleRecognitionResult(_ result: SFSpeechRecognitionResult?, error: Error?) {
         guard let result = result else {
             if let error = error {
-                print("[RealtimeSpeechRecognizer] Recognition error: \(error)")
+                debugLog("Recognition error: \(error)", module: "RealtimeSpeechRecognizer", level: .error)
+                debugCaptureError(error, context: "Speech recognition")
             }
             return
         }
@@ -296,7 +297,7 @@ final class RealtimeSpeechRecognizer: NSObject, ObservableObject {
 
         // Если это финальный результат, можно что-то сделать
         if result.isFinal {
-            print("[RealtimeSpeechRecognizer] Final result: \(text)")
+            debugLog("Final result: \(text)", module: "RealtimeSpeechRecognizer")
         }
     }
 
@@ -324,7 +325,7 @@ final class RealtimeSpeechRecognizer: NSObject, ObservableObject {
         let wordCount = currentPhraseText.split(separator: " ").count
         if wordCount < minimumWordCount {
             // Слов недостаточно — продолжаем ждать
-            print("[RealtimeSpeechRecognizer] Word count \(wordCount) < \(minimumWordCount), waiting for more speech...")
+            debugLog("Word count \(wordCount) < \(minimumWordCount), waiting for more speech...", module: "RealtimeSpeechRecognizer")
             resetPauseTimer()
             return
         }
@@ -360,7 +361,7 @@ final class RealtimeSpeechRecognizer: NSObject, ObservableObject {
         let text = currentPhraseText.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if !text.isEmpty {
-            print("[RealtimeSpeechRecognizer] Phrase completed: '\(text.prefix(50))...', duration: \(duration)s")
+            debugLog("Phrase completed: '\(text.prefix(50))...', duration: \(duration)s", module: "RealtimeSpeechRecognizer")
             onPhraseCompleted?(chunkURL, duration, text)
         } else {
             // Удаляем пустой чанк

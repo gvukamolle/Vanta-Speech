@@ -348,6 +348,7 @@ struct iPadRecordingContentView: View {
                 } catch {
                     errorMessage = error.localizedDescription
                     showError = true
+                    debugCaptureError(error, context: "Starting recording (iPad)")
                 }
             }
         }
@@ -361,6 +362,7 @@ struct iPadRecordingContentView: View {
             } catch {
                 errorMessage = error.localizedDescription
                 showError = true
+                debugCaptureError(error, context: "Starting realtime recording (iPad)")
             }
         }
     }

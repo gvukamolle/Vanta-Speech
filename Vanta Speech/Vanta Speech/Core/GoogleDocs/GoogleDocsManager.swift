@@ -72,10 +72,11 @@ final class GoogleDocsManager: ObservableObject {
         do {
             let folders = try await driveService.listFolders()
             availableFolders = folders
-            print("[GoogleDocsManager] Loaded \(folders.count) folders")
+            debugLog("Loaded \(folders.count) folders", module: "GoogleDocsManager")
         } catch {
             lastError = error
-            print("[GoogleDocsManager] Failed to load folders: \(error.localizedDescription)")
+            debugLog("Failed to load folders: \(error.localizedDescription)", module: "GoogleDocsManager", level: .error)
+            debugCaptureError(error, context: "Loading Google Drive folders")
         }
 
         isLoadingFolders = false
@@ -125,18 +126,19 @@ final class GoogleDocsManager: ObservableObject {
                     fileId: document.documentId,
                     folderId: folder.id
                 )
-                print("[GoogleDocsManager] Moved document to folder: \(folder.name)")
+                debugLog("Moved document to folder: \(folder.name)", module: "GoogleDocsManager")
             }
 
             guard let url = document.url else {
                 throw GoogleDocsError.documentCreationFailed("Invalid document URL")
             }
 
-            print("[GoogleDocsManager] Created document: \(title)")
+            debugLog("Created document: \(title)", module: "GoogleDocsManager")
             return url
 
         } catch {
             lastError = error
+            debugCaptureError(error, context: "Creating Google Doc with markdown")
             throw error
         }
     }
@@ -172,6 +174,7 @@ final class GoogleDocsManager: ObservableObject {
 
         } catch {
             lastError = error
+            debugCaptureError(error, context: "Creating Google Doc")
             throw error
         }
     }

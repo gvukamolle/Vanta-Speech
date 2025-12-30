@@ -79,8 +79,8 @@ actor AudioConverter {
 
         // TODO: FFmpegKit временно отключен — возвращаем исходный файл
         // Whisper поддерживает M4A, так что это работает
-        print("[AudioConverter] FFmpeg disabled — using original M4A file")
-        print("[AudioConverter] File: \(inputURL.lastPathComponent)")
+        debugLog("FFmpeg disabled — using original M4A file", module: "AudioConverter")
+        debugLog("File: \(inputURL.lastPathComponent)", module: "AudioConverter")
 
         return inputURL
 

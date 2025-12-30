@@ -6,6 +6,7 @@ import UIKit
 struct VantaSpeechApp: App {
     @StateObject private var coordinator = RecordingCoordinator.shared
     @StateObject private var authManager = AuthenticationManager.shared
+    @StateObject private var debugManager = DebugManager.shared
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -74,6 +75,11 @@ struct VantaSpeechApp: App {
             .onOpenURL { url in
                 // Обработка MSAL callback для Outlook авторизации
                 _ = MSALAuthManager.handleMSALResponse(url, sourceApplication: nil)
+            }
+            .sheet(isPresented: $debugManager.showErrorSheet) {
+                if let error = debugManager.lastError {
+                    DebugErrorView(error: error)
+                }
             }
         }
         .modelContainer(sharedModelContainer)

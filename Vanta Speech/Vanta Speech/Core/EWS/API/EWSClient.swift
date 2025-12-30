@@ -94,7 +94,7 @@ extension EWSClient: URLSessionTaskDelegate {
     ) {
         // Prevent infinite auth loops
         guard challenge.previousFailureCount < 3 else {
-            print("[EWSClient] Authentication failed after 3 attempts")
+            debugLog("Authentication failed after 3 attempts", module: "EWSClient", level: .error)
             completionHandler(.cancelAuthenticationChallenge, nil)
             return
         }
@@ -103,7 +103,7 @@ extension EWSClient: URLSessionTaskDelegate {
 
         switch authMethod {
         case NSURLAuthenticationMethodNTLM:
-            print("[EWSClient] NTLM challenge received, responding with credentials")
+            debugLog("NTLM challenge received, responding with credentials", module: "EWSClient")
             completionHandler(.useCredential, credential)
 
         case NSURLAuthenticationMethodServerTrust:
@@ -117,11 +117,11 @@ extension EWSClient: URLSessionTaskDelegate {
 
         case NSURLAuthenticationMethodHTTPBasic:
             // Fallback to Basic auth if NTLM not available
-            print("[EWSClient] Basic auth challenge received")
+            debugLog("Basic auth challenge received", module: "EWSClient")
             completionHandler(.useCredential, credential)
 
         default:
-            print("[EWSClient] Unknown auth method: \(authMethod)")
+            debugLog("Unknown auth method: \(authMethod)", module: "EWSClient", level: .warning)
             completionHandler(.performDefaultHandling, nil)
         }
     }

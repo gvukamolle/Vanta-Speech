@@ -102,7 +102,7 @@ final class AudioRecorder: NSObject, ObservableObject {
         do {
             try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         } catch {
-            print("Failed to deactivate audio session: \(error)")
+            debugLog("Failed to deactivate audio session: \(error)", module: "AudioRecorder", level: .error)
         }
     }
 
@@ -161,7 +161,7 @@ final class AudioRecorder: NSObject, ObservableObject {
                     }
                     stopTimer()
                     isInterrupted = true
-                    print("[AudioRecorder] Interruption began - recording paused")
+                    debugLog("Interruption began - recording paused", module: "AudioRecorder")
                 }
 
             case .ended:
@@ -173,9 +173,9 @@ final class AudioRecorder: NSObject, ObservableObject {
                         // Re-activate audio session
                         do {
                             try AVAudioSession.sharedInstance().setActive(true)
-                            print("[AudioRecorder] Interruption ended - session reactivated, waiting for user to resume")
+                            debugLog("Interruption ended - session reactivated, waiting for user to resume", module: "AudioRecorder")
                         } catch {
-                            print("[AudioRecorder] Failed to reactivate session: \(error)")
+                            debugLog("Failed to reactivate session: \(error)", module: "AudioRecorder", level: .error)
                         }
                     }
                 }
@@ -196,10 +196,10 @@ final class AudioRecorder: NSObject, ObservableObject {
         switch reason {
         case .oldDeviceUnavailable:
             // Headphones unplugged - continue recording via built-in mic
-            print("[AudioRecorder] Audio route changed: old device unavailable")
+            debugLog("Audio route changed: old device unavailable", module: "AudioRecorder")
         case .newDeviceAvailable:
             // New device connected
-            print("[AudioRecorder] Audio route changed: new device available")
+            debugLog("Audio route changed: new device available", module: "AudioRecorder")
         default:
             break
         }
@@ -214,7 +214,7 @@ final class AudioRecorder: NSObject, ObservableObject {
                 pausedDuration = Date().timeIntervalSince(startTime)
             }
             stopTimer()
-            print("[AudioRecorder] App backgrounded - timer stopped, recording continues")
+            debugLog("App backgrounded - timer stopped, recording continues", module: "AudioRecorder")
         }
     }
 
@@ -224,7 +224,7 @@ final class AudioRecorder: NSObject, ObservableObject {
             // Restart UI timer
             startTimer()
             // Duration is calculated from startTime, so it's accurate
-            print("[AudioRecorder] App foregrounded - timer restarted")
+            debugLog("App foregrounded - timer restarted", module: "AudioRecorder")
         }
     }
 
@@ -273,13 +273,16 @@ final class AudioRecorder: NSObject, ObservableObject {
         pausedDuration = 0
         startTimer()
 
-        print("[AudioRecorder] Recording started: \(fileURL.lastPathComponent)")
+        debugLog("Recording started: \(fileURL.lastPathComponent)", module: "AudioRecorder")
 
         return fileURL
     }
 
     func stopRecording() -> (url: URL, duration: TimeInterval)? {
-        guard let recorder = audioRecorder, isRecording else { return nil }
+        guard let recorder = audioRecorder, isRecording else {
+            debugLog("stopRecording guard failed: audioRecorder=\(audioRecorder != nil), isRecording=\(isRecording)", module: "AudioRecorder", level: .warning)
+            return nil
+        }
 
         let url = recorder.url
         let duration = recordingDuration
@@ -295,7 +298,7 @@ final class AudioRecorder: NSObject, ObservableObject {
         startTime = nil
         pausedDuration = 0
 
-        print("[AudioRecorder] Recording stopped: \(url.lastPathComponent), duration: \(duration)s")
+        debugLog("Recording stopped: \(url.lastPathComponent), duration: \(duration)s", module: "AudioRecorder")
 
         return (url, duration)
     }
@@ -316,7 +319,7 @@ final class AudioRecorder: NSObject, ObservableObject {
             )
             return .success((oggURL, result.duration))
         } catch {
-            print("[AudioRecorder] OGG conversion failed: \(error.localizedDescription). Using M4A.")
+            debugLog("OGG conversion failed: \(error.localizedDescription). Using M4A.", module: "AudioRecorder", level: .warning)
             return .success(result)
         }
     }
@@ -340,7 +343,7 @@ final class AudioRecorder: NSObject, ObservableObject {
         }
         stopTimer()
         isInterrupted = true
-        print("[AudioRecorder] Recording paused")
+        debugLog("Recording paused", module: "AudioRecorder")
     }
 
     func resumeRecording() {
@@ -348,7 +351,7 @@ final class AudioRecorder: NSObject, ObservableObject {
         do {
             try AVAudioSession.sharedInstance().setActive(true)
         } catch {
-            print("[AudioRecorder] Failed to reactivate session: \(error)")
+            debugLog("Failed to reactivate session: \(error)", module: "AudioRecorder", level: .error)
         }
 
         audioRecorder?.record()
@@ -358,7 +361,7 @@ final class AudioRecorder: NSObject, ObservableObject {
         }
         isInterrupted = false
         startTimer()
-        print("[AudioRecorder] Recording resumed")
+        debugLog("Recording resumed", module: "AudioRecorder")
     }
 
     // MARK: - Realtime Recording
@@ -416,7 +419,7 @@ final class AudioRecorder: NSObject, ObservableObject {
         pausedDuration = 0
         startTimer()
 
-        print("[AudioRecorder] Realtime recording started: \(chunkURL.lastPathComponent)")
+        debugLog("Realtime recording started: \(chunkURL.lastPathComponent)", module: "AudioRecorder")
 
         return chunkURL
     }
@@ -432,7 +435,7 @@ final class AudioRecorder: NSObject, ObservableObject {
         // Финализируем последний чанк если он достаточно длинный
         if let chunkURL = currentChunkURL, currentChunkDuration >= 2.0 {
             audioRecorder?.stop()
-            print("[AudioRecorder] Final chunk saved: \(chunkURL.lastPathComponent), duration: \(currentChunkDuration)s")
+            debugLog("Final chunk saved: \(chunkURL.lastPathComponent), duration: \(currentChunkDuration)s", module: "AudioRecorder")
             onChunkReady?(chunkURL, currentChunkDuration)
         } else {
             audioRecorder?.stop()
@@ -457,7 +460,7 @@ final class AudioRecorder: NSObject, ObservableObject {
         silenceDuration = 0
         currentChunkDuration = 0
 
-        print("[AudioRecorder] Realtime recording stopped, total duration: \(totalDuration)s")
+        debugLog("Realtime recording stopped, total duration: \(totalDuration)s", module: "AudioRecorder")
 
         return (currentChunkURL, totalDuration)
     }
@@ -484,7 +487,7 @@ final class AudioRecorder: NSObject, ObservableObject {
         audioRecorder?.stop()
 
         let chunkDuration = currentChunkDuration
-        print("[AudioRecorder] Chunk finalized: \(chunkURL.lastPathComponent), duration: \(chunkDuration)s")
+        debugLog("Chunk finalized: \(chunkURL.lastPathComponent), duration: \(chunkDuration)s", module: "AudioRecorder")
 
         // Уведомляем о готовности чанка
         onChunkReady?(chunkURL, chunkDuration)
@@ -511,9 +514,10 @@ final class AudioRecorder: NSObject, ObservableObject {
             currentChunkDuration = 0
             silenceDuration = 0
 
-            print("[AudioRecorder] New chunk started: \(newChunkURL.lastPathComponent)")
+            debugLog("New chunk started: \(newChunkURL.lastPathComponent)", module: "AudioRecorder")
         } catch {
-            print("[AudioRecorder] Failed to start new chunk: \(error)")
+            debugLog("Failed to start new chunk: \(error)", module: "AudioRecorder", level: .error)
+            debugCaptureError(error, context: "Starting new audio chunk")
         }
 
         isFinalizingChunk = false
@@ -607,7 +611,7 @@ extension AudioRecorder: AVAudioRecorderDelegate {
         Task { @MainActor in
             if !flag {
                 isRecording = false
-                print("[AudioRecorder] Recording finished unsuccessfully")
+                debugLog("Recording finished unsuccessfully", module: "AudioRecorder", level: .error)
             }
         }
     }
@@ -616,7 +620,8 @@ extension AudioRecorder: AVAudioRecorderDelegate {
         Task { @MainActor in
             isRecording = false
             if let error = error {
-                print("[AudioRecorder] Encoding error: \(error.localizedDescription)")
+                debugLog("Encoding error: \(error.localizedDescription)", module: "AudioRecorder", level: .error)
+                debugCaptureError(error, context: "Audio encoding")
             }
         }
     }
@@ -689,7 +694,7 @@ extension AudioRecorder {
 
         guard exportSession.status == .completed else {
             if let error = exportSession.error {
-                print("[AudioRecorder] Export failed: \(error)")
+                debugLog("Export failed: \(error)", module: "AudioRecorder", level: .error)
             }
             throw AudioRecorderError.mergeFailed
         }
@@ -706,9 +711,84 @@ extension AudioRecorder {
         // Вычисляем общую длительность
         let totalDuration = CMTimeGetSeconds(firstDuration) + CMTimeGetSeconds(secondDuration)
 
-        print("[AudioRecorder] Merged audio files, total duration: \(totalDuration)s")
+        debugLog("Merged audio files, total duration: \(totalDuration)s", module: "AudioRecorder")
 
         return (firstURL, totalDuration)
+    }
+
+    /// Склеивает множество аудиофайлов в один
+    /// Оптимизировано для мержа чанков real-time записи
+    /// - Parameter urls: Массив URL аудиофайлов в порядке склейки
+    /// - Returns: URL результирующего файла
+    func mergeMultipleAudioFiles(urls: [URL]) async throws -> URL {
+        guard !urls.isEmpty else {
+            throw AudioRecorderError.mergeFailed
+        }
+
+        // Если один файл - просто возвращаем его
+        if urls.count == 1 {
+            return urls[0]
+        }
+
+        let composition = AVMutableComposition()
+
+        guard let compositionTrack = composition.addMutableTrack(
+            withMediaType: .audio,
+            preferredTrackID: kCMPersistentTrackID_Invalid
+        ) else {
+            throw AudioRecorderError.mergeFailed
+        }
+
+        var currentTime = CMTime.zero
+
+        // Добавляем все треки последовательно
+        for (index, url) in urls.enumerated() {
+            let asset = AVURLAsset(url: url)
+            let tracks = try await asset.loadTracks(withMediaType: .audio)
+
+            guard let track = tracks.first else {
+                debugLog("No audio track in file \(index): \(url.lastPathComponent)", module: "AudioRecorder", level: .warning)
+                continue
+            }
+
+            let duration = try await asset.load(.duration)
+
+            try compositionTrack.insertTimeRange(
+                CMTimeRange(start: .zero, duration: duration),
+                of: track,
+                at: currentTime
+            )
+
+            currentTime = CMTimeAdd(currentTime, duration)
+        }
+
+        // Создаём файл для результата
+        let outputURL = recordingsDirectory.appendingPathComponent("merged_\(Date().timeIntervalSince1970).m4a")
+
+        guard let exportSession = AVAssetExportSession(
+            asset: composition,
+            presetName: AVAssetExportPresetAppleM4A
+        ) else {
+            throw AudioRecorderError.mergeFailed
+        }
+
+        exportSession.outputURL = outputURL
+        exportSession.outputFileType = .m4a
+
+        await exportSession.export()
+
+        guard exportSession.status == .completed else {
+            if let error = exportSession.error {
+                debugLog("Merge export failed: \(error)", module: "AudioRecorder", level: .error)
+                debugCaptureError(error, context: "Merging multiple audio files")
+            }
+            throw AudioRecorderError.mergeFailed
+        }
+
+        let totalDuration = CMTimeGetSeconds(currentTime)
+        debugLog("Merged \(urls.count) audio files, total duration: \(totalDuration)s", module: "AudioRecorder")
+
+        return outputURL
     }
 }
 

@@ -42,7 +42,7 @@ final class GoogleAuthManager: ObservableObject {
 
         // For now, return false to indicate SDK not configured
         lastError = GoogleDocsError.invalidConfiguration
-        print("[GoogleAuthManager] GoogleSignIn SDK not configured. Add via SPM.")
+        debugLog("GoogleSignIn SDK not configured. Add via SPM.", module: "GoogleAuthManager", level: .warning)
         return false
     }
 
@@ -55,7 +55,7 @@ final class GoogleAuthManager: ObservableObject {
         currentUser = nil
         isSignedIn = false
         lastError = nil
-        print("[GoogleAuthManager] Signed out")
+        debugLog("Signed out", module: "GoogleAuthManager")
     }
 
     /// Get valid access token, refreshing if needed
@@ -91,7 +91,7 @@ final class GoogleAuthManager: ObservableObject {
            keychainManager.loadGoogleRefreshToken() != nil {
             currentUser = userInfo
             isSignedIn = true
-            print("[GoogleAuthManager] Restored session for \(userInfo.email)")
+            debugLog("Restored session for \(userInfo.email)", module: "GoogleAuthManager")
 
             // Note: With actual SDK:
             // GIDSignIn.sharedInstance.restorePreviousSignIn { user, error in ... }
@@ -133,7 +133,7 @@ final class GoogleAuthManager: ObservableObject {
             try? keychainManager.saveGoogleRefreshToken(refresh)
         }
 
-        print("[GoogleAuthManager] Signed in as \(email)")
+        debugLog("Signed in as \(email)", module: "GoogleAuthManager")
     }
 }
 

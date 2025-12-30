@@ -106,8 +106,13 @@ final class DarwinNotificationCenter {
                 let instance = Unmanaged<DarwinNotificationCenter>.fromOpaque(observer).takeUnretainedValue()
                 let notificationName = name.rawValue as String
 
-                DispatchQueue.main.async {
+                // Оптимизация: если уже на main thread, выполняем немедленно
+                if Thread.isMainThread {
                     instance.handleNotification(named: notificationName)
+                } else {
+                    DispatchQueue.main.async {
+                        instance.handleNotification(named: notificationName)
+                    }
                 }
             },
             name.rawValue,

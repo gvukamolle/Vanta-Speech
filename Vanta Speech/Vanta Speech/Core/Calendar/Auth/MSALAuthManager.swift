@@ -62,7 +62,7 @@ final class MSALAuthManager: ObservableObject {
     private func setupApplication() {
         do {
             guard let authorityURL = URL(string: authority) else {
-                print("[MSALAuthManager] Invalid authority URL")
+                debugLog("Invalid authority URL", module: "MSALAuthManager", level: .error)
                 return
             }
 
@@ -78,9 +78,10 @@ final class MSALAuthManager: ObservableObject {
             config.multipleCloudsSupported = true
 
             application = try MSALPublicClientApplication(configuration: config)
-            print("[MSALAuthManager] MSAL configured successfully")
+            debugLog("MSAL configured successfully", module: "MSALAuthManager")
         } catch {
-            print("[MSALAuthManager] MSAL setup failed: \(error.localizedDescription)")
+            debugLog("MSAL setup failed: \(error.localizedDescription)", module: "MSALAuthManager", level: .error)
+            debugCaptureError(error, context: "MSAL setup")
             self.error = "Ошибка настройки аутентификации: \(error.localizedDescription)"
         }
     }
@@ -95,10 +96,11 @@ final class MSALAuthManager: ObservableObject {
                 isSignedIn = true
                 userName = account.username
                 userEmail = account.username
-                print("[MSALAuthManager] Loaded cached account: \(account.username ?? "unknown")")
+                debugLog("Loaded cached account: \(account.username ?? "unknown")", module: "MSALAuthManager")
             }
         } catch {
-            print("[MSALAuthManager] Failed to load cached account: \(error)")
+            debugLog("Failed to load cached account: \(error)", module: "MSALAuthManager", level: .error)
+            debugCaptureError(error, context: "MSALAuthManager.loadCachedAccount")
         }
     }
     #endif
@@ -153,7 +155,7 @@ final class MSALAuthManager: ObservableObject {
                     self?.userName = result.account.username
                     self?.userEmail = result.account.username
 
-                    print("[MSALAuthManager] Sign in successful: \(result.account.username ?? "unknown")")
+                    debugLog("Sign in successful: \(result.account.username ?? "unknown")", module: "MSALAuthManager")
                     continuation.resume(returning: result.accessToken)
                 }
             }
@@ -236,7 +238,7 @@ final class MSALAuthManager: ObservableObject {
                     self?.userName = nil
                     self?.userEmail = nil
 
-                    print("[MSALAuthManager] Sign out successful")
+                    debugLog("Sign out successful", module: "MSALAuthManager")
                     continuation.resume()
                 }
             }
@@ -255,7 +257,7 @@ final class MSALAuthManager: ObservableObject {
         userName = nil
         userEmail = nil
 
-        print("[MSALAuthManager] Local sign out successful")
+        debugLog("Local sign out successful", module: "MSALAuthManager")
         #endif
     }
 
