@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 /// Manages EWS authentication and credential storage
 @MainActor

@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 /// Service layer for EWS calendar operations
 actor EWSCalendarService {
