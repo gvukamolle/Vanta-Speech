@@ -3,6 +3,63 @@ import AppIntents
 import SwiftUI
 import WidgetKit
 
+// MARK: - Autonomous Timer View
+
+/// Таймер, который работает автономно без обновлений из main app
+struct AutonomousTimerView: View {
+    let status: RecordingActivityStatus
+    let timerReferenceDate: Date?
+    let duration: TimeInterval
+    let font: Font
+    let isCompact: Bool
+
+    init(
+        status: RecordingActivityStatus,
+        timerReferenceDate: Date?,
+        duration: TimeInterval,
+        font: Font = .title2,
+        isCompact: Bool = false
+    ) {
+        self.status = status
+        self.timerReferenceDate = timerReferenceDate
+        self.duration = duration
+        self.font = font
+        self.isCompact = isCompact
+    }
+
+    var body: some View {
+        Group {
+            if status == .recording, let refDate = timerReferenceDate {
+                // Автономный таймер - считает сам без обновлений из main app
+                Text(refDate, style: .timer)
+                    .multilineTextAlignment(.center)
+            } else {
+                // Статическое время для паузы/остановки (формат как у системного: "0:05")
+                Text(formatDuration(duration))
+            }
+        }
+        .font(font)
+        .fontWeight(.bold)
+        .monospacedDigit()
+        .foregroundStyle(status == .recording ? .red : .primary)
+        // Фиксированная ширина для compact view предотвращает расширение Dynamic Island
+        .frame(width: isCompact ? 45 : nil)
+    }
+
+    /// Формат как у системного таймера: "0:05", "1:23", "12:34", "1:02:03"
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let hours = Int(duration) / 3600
+        let minutes = (Int(duration) % 3600) / 60
+        let seconds = Int(duration) % 60
+
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
+        }
+        // Без leading zero для минут - как системный таймер
+        return String(format: "%d:%02d", minutes, seconds)
+    }
+}
+
 // MARK: - Circle Icon Button
 
 /// Универсальная кнопка-кружок с иконкой и белой обводкой
@@ -64,12 +121,13 @@ struct RecordingLiveActivityWidget: Widget {
         }
 
         DynamicIslandExpandedRegion(.center) {
-            // Таймер по центру
-            Text(formatDuration(context.state.duration))
-                .font(.title2)
-                .fontWeight(.bold)
-                .monospacedDigit()
-                .foregroundStyle(context.state.status == .recording ? .red : .primary)
+            // Автономный таймер по центру
+            AutonomousTimerView(
+                status: context.state.status,
+                timerReferenceDate: context.state.timerReferenceDate,
+                duration: context.state.duration,
+                font: .title2
+            )
         }
 
         DynamicIslandExpandedRegion(.trailing) {
@@ -163,11 +221,14 @@ struct RecordingLiveActivityWidget: Widget {
     ) -> some View {
         switch context.state.status {
         case .recording, .paused, .stopped:
-            Text(formatDuration(context.state.duration))
-                .font(.caption)
-                .fontWeight(.semibold)
-                .monospacedDigit()
-                .foregroundStyle(context.state.status == .recording ? .red : .primary)
+            // Автономный таймер для compact view
+            AutonomousTimerView(
+                status: context.state.status,
+                timerReferenceDate: context.state.timerReferenceDate,
+                duration: context.state.duration,
+                font: .caption,
+                isCompact: true
+            )
 
         case .transcribing:
             ProgressView()
@@ -205,17 +266,6 @@ struct RecordingLiveActivityWidget: Widget {
 
     // MARK: - Helpers
 
-    private func formatDuration(_ duration: TimeInterval) -> String {
-        let hours = Int(duration) / 3600
-        let minutes = (Int(duration) % 3600) / 60
-        let seconds = Int(duration) % 60
-
-        if hours > 0 {
-            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
-        }
-        return String(format: "%02d:%02d", minutes, seconds)
-    }
-
     private func statusColor(_ status: RecordingActivityStatus) -> Color {
         switch status {
         case .recording: return .pink
@@ -242,12 +292,13 @@ struct LockScreenLiveActivityView: View {
 
             Spacer()
 
-            // Таймер по центру
-            Text(formatDuration(context.state.duration))
-                .font(.title)
-                .fontWeight(.bold)
-                .monospacedDigit()
-                .foregroundStyle(context.state.status == .recording ? .red : .primary)
+            // Автономный таймер по центру
+            AutonomousTimerView(
+                status: context.state.status,
+                timerReferenceDate: context.state.timerReferenceDate,
+                duration: context.state.duration,
+                font: .title
+            )
 
             Spacer()
 
@@ -323,16 +374,5 @@ struct LockScreenLiveActivityView: View {
         case .completed:
             EmptyView()
         }
-    }
-
-    private func formatDuration(_ duration: TimeInterval) -> String {
-        let hours = Int(duration) / 3600
-        let minutes = (Int(duration) % 3600) / 60
-        let seconds = Int(duration) % 60
-
-        if hours > 0 {
-            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
-        }
-        return String(format: "%02d:%02d", minutes, seconds)
     }
 }

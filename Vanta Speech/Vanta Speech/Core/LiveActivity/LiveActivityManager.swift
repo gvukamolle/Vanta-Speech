@@ -31,7 +31,7 @@ final class LiveActivityManager: ObservableObject {
     func startActivity(
         recordingId: UUID,
         preset: RecordingPreset
-    ) throws {
+    ) async throws {
         debugLog("Attempting to start activity...", module: "LiveActivityManager")
         debugLog("areActivitiesEnabled: \(areActivitiesEnabled)", module: "LiveActivityManager")
 
@@ -40,13 +40,8 @@ final class LiveActivityManager: ObservableObject {
             throw LiveActivityError.notEnabled
         }
 
-        // Завершаем предыдущую активность
-        if currentActivity != nil {
-            debugLog("Ending previous activity first...", module: "LiveActivityManager")
-            Task {
-                await endActivityImmediately()
-            }
-        }
+        // Завершаем ВСЕ предыдущие активности (включая orphaned)
+        await endAllActivities()
 
         let attributes = RecordingActivityAttributes(
             recordingId: recordingId,
@@ -95,33 +90,66 @@ final class LiveActivityManager: ObservableObject {
             return
         }
 
+        // При resume переданная duration может быть устаревшей (AudioRecorder начинает с 0)
+        // Используем большее значение чтобы не сбить timerReferenceDate установленный Intent'ом
+        let actualDuration = max(duration, activity.content.state.duration)
+
         // Рассчитываем timerReferenceDate так, чтобы автономный таймер показывал правильное время
-        let timerReferenceDate = Date().addingTimeInterval(-duration)
+        let timerReferenceDate = Date().addingTimeInterval(-actualDuration)
 
         await updateState(
             status: .recording,
             timerReferenceDate: timerReferenceDate,
-            duration: duration,
+            duration: actualDuration,
             audioLevel: audioLevel
         )
     }
 
     /// Переключение на паузу
     func updatePaused(duration: TimeInterval) async {
+        guard let activity = currentActivity else { return }
+
+        // Вычисляем реальную duration из timerReferenceDate (если есть)
+        // т.к. переданная duration может быть устаревшей когда app был в background
+        let actualDuration: TimeInterval
+        if let refDate = activity.content.state.timerReferenceDate {
+            actualDuration = Date().timeIntervalSince(refDate)
+            debugLog("updatePaused: calculated duration from refDate: \(actualDuration)", module: "LiveActivityManager")
+        } else {
+            // Fallback: используем большее значение между переданной и текущей duration
+            // (optimistic update мог уже установить правильное значение)
+            actualDuration = max(duration, activity.content.state.duration)
+            debugLog("updatePaused: using max duration: \(actualDuration)", module: "LiveActivityManager")
+        }
+
         await updateState(
             status: .paused,
             timerReferenceDate: nil,  // Останавливаем автономный таймер
-            duration: duration,
+            duration: actualDuration,
             audioLevel: 0
         )
     }
 
     /// Переключение на состояние "остановлено" (показать кнопку саммари)
     func updateStopped(duration: TimeInterval, audioFileURL: String) async {
+        guard let activity = currentActivity else { return }
+
+        // Вычисляем реальную duration из timerReferenceDate (если есть)
+        // т.к. переданная duration может быть устаревшей когда app был в background
+        let actualDuration: TimeInterval
+        if let refDate = activity.content.state.timerReferenceDate {
+            actualDuration = Date().timeIntervalSince(refDate)
+            debugLog("updateStopped: calculated duration from refDate: \(actualDuration)", module: "LiveActivityManager")
+        } else {
+            // Fallback: используем большее значение между переданной и текущей duration
+            actualDuration = max(duration, activity.content.state.duration)
+            debugLog("updateStopped: using max duration: \(actualDuration)", module: "LiveActivityManager")
+        }
+
         await updateState(
             status: .stopped,
             timerReferenceDate: nil,  // Таймер остановлен
-            duration: duration,
+            duration: actualDuration,
             audioLevel: 0,
             audioFileURL: audioFileURL
         )
@@ -178,6 +206,23 @@ final class LiveActivityManager: ObservableObject {
         currentActivity = nil
         isActivityRunning = false
         debugLog("Activity ended immediately", module: "LiveActivityManager")
+    }
+
+    /// Завершить ВСЕ активности (включая orphaned)
+    func endAllActivities() async {
+        let allActivities = Activity<RecordingActivityAttributes>.activities
+        debugLog("Ending all activities, count: \(allActivities.count)", module: "LiveActivityManager")
+
+        for activity in allActivities {
+            await activity.end(
+                activity.content,
+                dismissalPolicy: .immediate
+            )
+            debugLog("Ended activity: \(activity.id)", module: "LiveActivityManager")
+        }
+
+        currentActivity = nil
+        isActivityRunning = false
     }
 
     // MARK: - Private Methods

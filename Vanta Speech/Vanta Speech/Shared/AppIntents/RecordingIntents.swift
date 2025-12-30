@@ -75,29 +75,44 @@ struct PauseRecordingIntent: LiveActivityIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        print("[PauseRecordingIntent] perform() called")
+        print("[PauseRecordingIntent] perform() called at \(Date())")
 
-        // Haptic feedback
+        // Сначала отправляем Darwin notification - main app начнёт обработку
+        DarwinNotificationCenter.shared.postPauseRecording()
+        print("[PauseRecordingIntent] Darwin notification sent")
+
+        // Haptic feedback - сразу после notification
         playHaptic(style: .medium)
 
-        // Optimistic UI update - мгновенное обновление виджета
+        // Optimistic UI update - fire and forget (не ждём завершения)
         if let activity = getCurrentActivity() {
             let currentState = activity.content.state
+
+            // Вычисляем реальное время из timerReferenceDate (не из stale duration)
+            let actualDuration: TimeInterval
+            if let refDate = currentState.timerReferenceDate {
+                actualDuration = Date().timeIntervalSince(refDate)
+                print("[PauseRecordingIntent] Calculated duration from refDate: \(actualDuration)")
+            } else {
+                actualDuration = currentState.duration
+                print("[PauseRecordingIntent] Using stored duration: \(actualDuration)")
+            }
+
             let newState = RecordingActivityAttributes.ContentState(
                 status: .paused,
                 timerReferenceDate: nil,
-                duration: currentState.duration,
+                duration: actualDuration,
                 audioLevel: 0,
                 transcriptionProgress: nil,
                 audioFileURL: currentState.audioFileURL
             )
-            await activity.update(ActivityContent(state: newState, staleDate: nil))
-            print("[PauseRecordingIntent] Optimistic update sent")
+            // Fire-and-forget: запускаем update без await
+            Task {
+                await activity.update(ActivityContent(state: newState, staleDate: nil))
+                print("[PauseRecordingIntent] Optimistic update completed")
+            }
+            print("[PauseRecordingIntent] Optimistic update fired")
         }
-
-        // Darwin notification для фактической обработки в main app
-        DarwinNotificationCenter.shared.postPauseRecording()
-        print("[PauseRecordingIntent] Darwin notification sent")
 
         return .result()
     }
@@ -112,13 +127,20 @@ struct ResumeRecordingIntent: LiveActivityIntent {
     func perform() async throws -> some IntentResult {
         print("[ResumeRecordingIntent] perform() called")
 
+        // Сначала отправляем Darwin notification - main app начнёт обработку
+        DarwinNotificationCenter.shared.postResumeRecording()
+        print("[ResumeRecordingIntent] Darwin notification sent")
+
         // Haptic feedback
         playHaptic(style: .medium)
 
-        // Optimistic UI update - мгновенное обновление виджета
+        // Optimistic UI update - fire and forget
         if let activity = getCurrentActivity() {
             let currentState = activity.content.state
+            // При возобновлении duration уже корректно сохранён при паузе
             let timerReferenceDate = Date().addingTimeInterval(-currentState.duration)
+            print("[ResumeRecordingIntent] Using stored duration: \(currentState.duration), timerRefDate: \(timerReferenceDate)")
+
             let newState = RecordingActivityAttributes.ContentState(
                 status: .recording,
                 timerReferenceDate: timerReferenceDate,
@@ -127,13 +149,13 @@ struct ResumeRecordingIntent: LiveActivityIntent {
                 transcriptionProgress: nil,
                 audioFileURL: currentState.audioFileURL
             )
-            await activity.update(ActivityContent(state: newState, staleDate: nil))
-            print("[ResumeRecordingIntent] Optimistic update sent")
+            // Fire-and-forget: запускаем update без await
+            Task {
+                await activity.update(ActivityContent(state: newState, staleDate: nil))
+                print("[ResumeRecordingIntent] Optimistic update completed")
+            }
+            print("[ResumeRecordingIntent] Optimistic update fired")
         }
-
-        // Darwin notification для фактической обработки в main app
-        DarwinNotificationCenter.shared.postResumeRecording()
-        print("[ResumeRecordingIntent] Darwin notification sent")
 
         return .result()
     }
@@ -148,27 +170,42 @@ struct StopRecordingIntent: LiveActivityIntent {
     func perform() async throws -> some IntentResult {
         print("[StopRecordingIntent] perform() called")
 
+        // Сначала отправляем Darwin notification - main app начнёт обработку
+        DarwinNotificationCenter.shared.postStopRecording()
+        print("[StopRecordingIntent] Darwin notification sent")
+
         // Haptic feedback - более сильный для важного действия
         playHaptic(style: .warning)
 
-        // Optimistic UI update - мгновенное обновление виджета
+        // Optimistic UI update - fire and forget
         if let activity = getCurrentActivity() {
             let currentState = activity.content.state
+
+            // Вычисляем реальное время из timerReferenceDate (не из stale duration)
+            let actualDuration: TimeInterval
+            if let refDate = currentState.timerReferenceDate {
+                actualDuration = Date().timeIntervalSince(refDate)
+                print("[StopRecordingIntent] Calculated duration from refDate: \(actualDuration)")
+            } else {
+                actualDuration = currentState.duration
+                print("[StopRecordingIntent] Using stored duration: \(actualDuration)")
+            }
+
             let newState = RecordingActivityAttributes.ContentState(
                 status: .stopped,
                 timerReferenceDate: nil,
-                duration: currentState.duration,
+                duration: actualDuration,
                 audioLevel: 0,
                 transcriptionProgress: nil,
                 audioFileURL: currentState.audioFileURL
             )
-            await activity.update(ActivityContent(state: newState, staleDate: nil))
-            print("[StopRecordingIntent] Optimistic update sent")
+            // Fire-and-forget: запускаем update без await
+            Task {
+                await activity.update(ActivityContent(state: newState, staleDate: nil))
+                print("[StopRecordingIntent] Optimistic update completed")
+            }
+            print("[StopRecordingIntent] Optimistic update fired")
         }
-
-        // Darwin notification для фактической обработки в main app
-        DarwinNotificationCenter.shared.postStopRecording()
-        print("[StopRecordingIntent] Darwin notification sent")
 
         return .result()
     }
@@ -183,10 +220,14 @@ struct StartTranscriptionIntent: LiveActivityIntent {
     func perform() async throws -> some IntentResult {
         print("[StartTranscriptionIntent] perform() called")
 
+        // Сначала отправляем Darwin notification - main app начнёт обработку
+        DarwinNotificationCenter.shared.postStartTranscription()
+        print("[StartTranscriptionIntent] Darwin notification sent")
+
         // Haptic feedback
         playHaptic(style: .medium)
 
-        // Optimistic UI update - мгновенное обновление виджета
+        // Optimistic UI update - fire and forget
         if let activity = getCurrentActivity() {
             let currentState = activity.content.state
             let newState = RecordingActivityAttributes.ContentState(
@@ -197,13 +238,13 @@ struct StartTranscriptionIntent: LiveActivityIntent {
                 transcriptionProgress: 0,
                 audioFileURL: currentState.audioFileURL
             )
-            await activity.update(ActivityContent(state: newState, staleDate: nil))
-            print("[StartTranscriptionIntent] Optimistic update sent")
+            // Fire-and-forget: запускаем update без await
+            Task {
+                await activity.update(ActivityContent(state: newState, staleDate: nil))
+                print("[StartTranscriptionIntent] Optimistic update completed")
+            }
+            print("[StartTranscriptionIntent] Optimistic update fired")
         }
-
-        // Darwin notification для фактической обработки в main app
-        DarwinNotificationCenter.shared.postStartTranscription()
-        print("[StartTranscriptionIntent] Darwin notification sent")
 
         return .result()
     }
@@ -247,6 +288,10 @@ struct DismissActivityIntent: LiveActivityIntent {
     func perform() async throws -> some IntentResult {
         print("[DismissActivityIntent] perform() called")
 
+        // Сначала отправляем Darwin notification - main app начнёт cleanup
+        DarwinNotificationCenter.shared.postDismissActivity()
+        print("[DismissActivityIntent] Darwin notification sent")
+
         // Haptic feedback - успешное завершение
         playHaptic(style: .success)
 
@@ -261,16 +306,16 @@ struct DismissActivityIntent: LiveActivityIntent {
                 transcriptionProgress: nil,
                 audioFileURL: currentState.audioFileURL
             )
-            await activity.end(
-                ActivityContent(state: finalState, staleDate: nil),
-                dismissalPolicy: .immediate
-            )
-            print("[DismissActivityIntent] Activity ended")
+            // Fire-and-forget: запускаем end без await
+            Task {
+                await activity.end(
+                    ActivityContent(state: finalState, staleDate: nil),
+                    dismissalPolicy: .immediate
+                )
+                print("[DismissActivityIntent] Activity ended")
+            }
+            print("[DismissActivityIntent] Activity end fired")
         }
-
-        // Darwin notification для cleanup в main app
-        DarwinNotificationCenter.shared.postDismissActivity()
-        print("[DismissActivityIntent] Darwin notification sent")
 
         return .result()
     }
@@ -285,21 +330,25 @@ struct HideActivityIntent: LiveActivityIntent {
     func perform() async throws -> some IntentResult {
         print("[HideActivityIntent] perform() called")
 
+        // Сначала отправляем Darwin notification - main app начнёт cleanup
+        DarwinNotificationCenter.shared.postHideActivity()
+        print("[HideActivityIntent] Darwin notification sent")
+
         // Haptic feedback - лёгкий
         playHaptic(style: .light)
 
         // Optimistic UI update - мгновенно скрываем Activity
         if let activity = getCurrentActivity() {
-            await activity.end(
-                activity.content,
-                dismissalPolicy: .immediate
-            )
-            print("[HideActivityIntent] Activity ended")
+            // Fire-and-forget: запускаем end без await
+            Task {
+                await activity.end(
+                    activity.content,
+                    dismissalPolicy: .immediate
+                )
+                print("[HideActivityIntent] Activity ended")
+            }
+            print("[HideActivityIntent] Activity end fired")
         }
-
-        // Darwin notification для cleanup в main app
-        DarwinNotificationCenter.shared.postHideActivity()
-        print("[HideActivityIntent] Darwin notification sent")
 
         return .result()
     }

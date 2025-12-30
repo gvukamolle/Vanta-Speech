@@ -105,7 +105,7 @@ final class RecordingCoordinator: ObservableObject {
         // Запускаем Live Activity
         if let id = currentRecordingId {
             do {
-                try liveActivityManager.startActivity(
+                try await liveActivityManager.startActivity(
                     recordingId: id,
                     preset: preset
                 )
@@ -151,7 +151,7 @@ final class RecordingCoordinator: ObservableObject {
 
         // Запускаем Live Activity с начальным временем = старая длительность
         do {
-            try liveActivityManager.startActivity(
+            try await liveActivityManager.startActivity(
                 recordingId: recording.id,
                 preset: preset
             )
