@@ -60,7 +60,7 @@ struct PresetEntityQuery: EntityQuery {
         return [
             PresetEntity(
                 id: "sales_call",
-                displayName: "Sales Call",
+                displayName: "Sales",
                 icon: "phone.arrow.up.right"
             ),
             PresetEntity(
@@ -70,13 +70,18 @@ struct PresetEntityQuery: EntityQuery {
             ),
             PresetEntity(
                 id: "daily_standup",
-                displayName: "Daily / Standup",
+                displayName: "Daily",
                 icon: "sun.max.fill"
             ),
             PresetEntity(
                 id: "interview",
-                displayName: "Интервью / Hiring",
+                displayName: "Интервью",
                 icon: "person.badge.plus"
+            ),
+            PresetEntity(
+                id: "fast_idea",
+                displayName: "Быстрая заметка",
+                icon: "bolt.fill"
             )
         ]
     }
