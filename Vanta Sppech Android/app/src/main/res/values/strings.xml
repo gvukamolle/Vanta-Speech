@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Vanta Speech</string>
+
+    <!-- Navigation -->
+    <string name="nav_recording">Запись</string>
+    <string name="nav_realtime">Real-time</string>
+    <string name="nav_library">Библиотека</string>
+    <string name="nav_settings">Настройки</string>
+
+    <!-- Recording -->
+    <string name="recording_start">Начать запись</string>
+    <string name="recording_stop">Остановить</string>
+    <string name="recording_pause">Пауза</string>
+    <string name="recording_resume">Продолжить</string>
+    <string name="recording_select_preset">Выберите тип записи</string>
+
+    <!-- Presets -->
+    <string name="preset_sales_call">Sales</string>
+    <string name="preset_project_meeting">Project Meeting</string>
+    <string name="preset_daily_standup">Daily</string>
+    <string name="preset_interview">Interview</string>
+    <string name="preset_fast_note">Quick Note</string>
+
+    <!-- Library -->
+    <string name="library_empty">Записей пока нет</string>
+    <string name="library_today">Сегодня</string>
+
+    <!-- Transcription -->
+    <string name="transcription_processing">Обработка…</string>
+    <string name="transcription_complete">Готово</string>
+    <string name="transcription_error">Ошибка транскрипции</string>
+
+    <!-- Permissions -->
+    <string name="permission_microphone_title">Разрешение на запись</string>
+    <string name="permission_microphone_rationale">Для записи встреч приложению нужен доступ к микрофону</string>
+    <string name="permission_notification_title">Уведомления</string>
+    <string name="permission_notification_rationale">Для отображения статуса записи в фоне</string>
+
+    <!-- Errors -->
+    <string name="error_recording_failed">Не удалось начать запись</string>
+    <string name="error_network">Ошибка сети</string>
+</resources>

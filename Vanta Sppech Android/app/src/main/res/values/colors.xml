@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Primary Colors -->
+    <color name="vanta_white">#FFFFFF</color>
+    <color name="vanta_gray">#808080</color>
+    <color name="vanta_charcoal">#363636</color>
+
+    <!-- Accent Colors -->
+    <color name="pink_light">#F9B9EB</color>
+    <color name="pink_vibrant">#FA68D5</color>
+    <color name="blue_light">#B3E5FF</color>
+    <color name="blue_vibrant">#3DBAFC</color>
+
+    <!-- Dark Theme Surfaces -->
+    <color name="dark_background">#1A1A1A</color>
+    <color name="dark_surface">#252525</color>
+    <color name="dark_surface_elevated">#2F2F2F</color>
+    <color name="dark_text_secondary">#A0A0A0</color>
+
+    <!-- Recording States -->
+    <color name="recording_active">#FF3B30</color>
+    <color name="recording_paused">#FF9500</color>
+</resources>
