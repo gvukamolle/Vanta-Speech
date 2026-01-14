@@ -355,31 +355,89 @@ fun RecordingDetailScreen(
 
                     Spacer(modifier = Modifier.height(24.dp))
 
-                    // Transcription section
-                    if (rec.isTranscribed) {
-                        // Summary
-                        rec.summaryText?.let { summary ->
-                            Text(
-                                text = "Саммари",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = VantaColors.White
-                            )
+                    // Transcription section - show if we have transcription text
+                    if (rec.transcriptionText != null) {
+                        // Summary section with loading indicator
+                        Column {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = "Саммари",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = VantaColors.White
+                                )
+
+                                // Show spinner if generating summary
+                                val isGenerating = rec.isSummaryGenerating ||
+                                    transcriptionState is TranscriptionState.GeneratingSummary
+                                if (isGenerating) {
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        color = VantaColors.PinkVibrant,
+                                        strokeWidth = 2.dp
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Генерируем...",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = VantaColors.DarkTextSecondary
+                                    )
+                                }
+                            }
 
                             Spacer(modifier = Modifier.height(12.dp))
 
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .background(VantaColors.DarkSurfaceElevated)
-                                    .padding(16.dp)
-                            ) {
-                                MarkdownText(
-                                    markdown = summary,
-                                    color = VantaColors.White,
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
+                            if (rec.summaryText != null) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(VantaColors.DarkSurfaceElevated)
+                                        .padding(16.dp)
+                                ) {
+                                    MarkdownText(
+                                        markdown = rec.summaryText,
+                                        color = VantaColors.White,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                }
+                            } else if (!rec.isSummaryGenerating && transcriptionState !is TranscriptionState.GeneratingSummary) {
+                                // Summary failed or not available - show retry button
+                                val errorState = transcriptionState as? TranscriptionState.Error
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(VantaColors.DarkSurfaceElevated)
+                                        .padding(16.dp)
+                                ) {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        if (errorState?.hasTranscription == true) {
+                                            Text(
+                                                text = errorState.message,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = VantaColors.RecordingActive,
+                                                textAlign = TextAlign.Center
+                                            )
+                                            Spacer(modifier = Modifier.height(12.dp))
+                                        }
+                                        OutlinedButton(
+                                            onClick = { viewModel.regenerateSummary() },
+                                            colors = ButtonDefaults.outlinedButtonColors(
+                                                contentColor = VantaColors.PinkVibrant
+                                            )
+                                        ) {
+                                            Text("Сгенерировать саммари")
+                                        }
+                                    }
+                                }
                             }
 
                             Spacer(modifier = Modifier.height(24.dp))
@@ -446,6 +504,7 @@ fun RecordingDetailScreen(
                                     progress = (transcriptionState as TranscriptionState.Transcribing).progress
                                 )
                             }
+                            is TranscriptionState.TranscriptionCompleted,
                             is TranscriptionState.GeneratingSummary -> {
                                 TranscriptionProgressCard(
                                     title = "Генерация саммари...",
@@ -453,6 +512,7 @@ fun RecordingDetailScreen(
                                 )
                             }
                             is TranscriptionState.Error -> {
+                                val error = transcriptionState as TranscriptionState.Error
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -465,7 +525,7 @@ fun RecordingDetailScreen(
                                         horizontalAlignment = Alignment.CenterHorizontally
                                     ) {
                                         Text(
-                                            text = (transcriptionState as TranscriptionState.Error).message,
+                                            text = error.message,
                                             style = MaterialTheme.typography.bodyLarge,
                                             color = VantaColors.RecordingActive,
                                             textAlign = TextAlign.Center

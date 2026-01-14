@@ -19,6 +19,17 @@ actor TranscriptionService {
         let generatedTitle: String?
     }
 
+    /// Progress stages for transcription with callbacks
+    enum TranscriptionStage: Sendable {
+        case transcribing
+        case transcriptionCompleted(String)
+        case generatingSummary
+        case summaryCompleted(String)
+        case generatingTitle
+        case completed(TranscriptionResult)
+        case error(Error)
+    }
+
     enum TranscriptionError: LocalizedError {
         case invalidURL
         case uploadFailed
@@ -81,6 +92,56 @@ actor TranscriptionService {
         }
 
         return TranscriptionResult(transcription: transcription, summary: summary, generatedTitle: generatedTitle)
+    }
+
+    /// Transcribe audio with progress callbacks for incremental UI updates
+    /// - Parameters:
+    ///   - audioFileURL: URL of the audio file to transcribe
+    ///   - preset: The meeting type preset to use for summarization
+    ///   - onProgress: Callback for each stage of the process
+    /// - Returns: TranscriptionResult with transcription, summary, and generated title
+    func transcribeWithProgress(
+        audioFileURL: URL,
+        preset: RecordingPreset = .projectMeeting,
+        onProgress: @escaping @Sendable (TranscriptionStage) async -> Void
+    ) async throws -> TranscriptionResult {
+        // Step 1: Notify transcription starting
+        await onProgress(.transcribing)
+
+        // Step 2: Transcribe audio using Whisper
+        let transcription: String
+        do {
+            transcription = try await transcribeAudio(fileURL: audioFileURL)
+            await onProgress(.transcriptionCompleted(transcription))
+        } catch {
+            await onProgress(.error(error))
+            throw error
+        }
+
+        // Step 3: Generate summary using LLM with preset-specific prompt
+        await onProgress(.generatingSummary)
+        var summary: String? = nil
+        do {
+            summary = try await generateSummary(text: transcription, preset: preset)
+            if let summaryText = summary {
+                await onProgress(.summaryCompleted(summaryText))
+            }
+        } catch {
+            // Summary failed but transcription succeeded - don't throw, just continue
+            await onProgress(.error(error))
+        }
+
+        // Step 4: Generate title from summary (if summary exists)
+        var generatedTitle: String? = nil
+        if let summaryText = summary {
+            await onProgress(.generatingTitle)
+            generatedTitle = try? await generateTitle(from: summaryText)
+        }
+
+        let result = TranscriptionResult(transcription: transcription, summary: summary, generatedTitle: generatedTitle)
+        await onProgress(.completed(result))
+
+        return result
     }
 
     // MARK: - Realtime Transcription API

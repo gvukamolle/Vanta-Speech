@@ -88,7 +88,8 @@ import java.util.Locale
 fun RecordingScreen(
     recordingViewModel: RecordingViewModel = hiltViewModel(),
     realtimeViewModel: RealtimeViewModel = hiltViewModel(),
-    onRecordingCompleted: (String) -> Unit = {}
+    onRecordingCompleted: (String) -> Unit = {},
+    onNavigateToRecording: (String) -> Unit = {}
 ) {
     // Standard recording state
     val selectedMode by recordingViewModel.selectedMode.collectAsStateWithLifecycle()
@@ -219,6 +220,7 @@ fun RecordingScreen(
                         selectedPreset = selectedPreset,
                         duration = duration,
                         todayRecordings = todayRecordings,
+                        onRecordingClick = onNavigateToRecording,
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -236,6 +238,7 @@ fun RecordingScreen(
                 RecordingMode.IMPORT -> {
                     ImportModeContent(
                         todayRecordings = todayRecordings,
+                        onRecordingClick = onNavigateToRecording,
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -400,6 +403,7 @@ private fun StandardModeContent(
     selectedPreset: RecordingPreset?,
     duration: Duration,
     todayRecordings: List<com.vanta.speech.core.domain.model.Recording>,
+    onRecordingClick: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     if (isRecording) {
@@ -447,6 +451,7 @@ private fun StandardModeContent(
     } else {
         TodayRecordingsContent(
             todayRecordings = todayRecordings,
+            onRecordingClick = onRecordingClick,
             modifier = modifier
         )
     }
@@ -876,10 +881,12 @@ private fun RealtimeModeControls(
 @Composable
 private fun ImportModeContent(
     todayRecordings: List<com.vanta.speech.core.domain.model.Recording>,
+    onRecordingClick: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     TodayRecordingsContent(
         todayRecordings = todayRecordings,
+        onRecordingClick = onRecordingClick,
         emptyMessage = "Импортируйте аудиофайл для транскрипции",
         modifier = modifier
     )
@@ -902,6 +909,7 @@ private fun ImportModeControls(
 @Composable
 private fun TodayRecordingsContent(
     todayRecordings: List<com.vanta.speech.core.domain.model.Recording>,
+    onRecordingClick: (String) -> Unit,
     emptyMessage: String = "Выберите пресет и нажмите для записи",
     modifier: Modifier = Modifier
 ) {
@@ -927,7 +935,7 @@ private fun TodayRecordingsContent(
                 items(todayRecordings) { recording ->
                     RecordingCard(
                         recording = recording,
-                        onClick = { /* TODO: Navigate to detail */ }
+                        onClick = { onRecordingClick(recording.id) }
                     )
                 }
 

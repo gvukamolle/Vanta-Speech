@@ -12,6 +12,7 @@ final class Recording {
     var summaryText: String?
     var isTranscribed: Bool
     var isUploading: Bool
+    var isSummaryGenerating: Bool
     var presetRawValue: String?
 
     /// The meeting preset used for this recording
@@ -30,6 +31,7 @@ final class Recording {
         summaryText: String? = nil,
         isTranscribed: Bool = false,
         isUploading: Bool = false,
+        isSummaryGenerating: Bool = false,
         preset: RecordingPreset? = nil
     ) {
         self.id = id
@@ -41,6 +43,7 @@ final class Recording {
         self.summaryText = summaryText
         self.isTranscribed = isTranscribed
         self.isUploading = isUploading
+        self.isSummaryGenerating = isSummaryGenerating
         self.presetRawValue = preset?.rawValue
     }
 }

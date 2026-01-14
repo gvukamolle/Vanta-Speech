@@ -17,6 +17,7 @@ data class Recording(
     val summaryText: String? = null,
     val isTranscribed: Boolean = false,
     val isUploading: Boolean = false,
+    val isSummaryGenerating: Boolean = false,
     val preset: RecordingPreset? = null
 ) {
     val formattedDuration: String

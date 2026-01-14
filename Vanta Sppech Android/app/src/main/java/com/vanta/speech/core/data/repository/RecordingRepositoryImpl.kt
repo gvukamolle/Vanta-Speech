@@ -76,6 +76,7 @@ class RecordingRepositoryImpl @Inject constructor(
         summaryText = summaryText,
         isTranscribed = isTranscribed,
         isUploading = isUploading,
+        isSummaryGenerating = isSummaryGenerating,
         preset = RecordingPreset.fromId(presetId)
     )
 
@@ -89,6 +90,7 @@ class RecordingRepositoryImpl @Inject constructor(
         summaryText = summaryText,
         isTranscribed = isTranscribed,
         isUploading = isUploading,
+        isSummaryGenerating = isSummaryGenerating,
         presetId = preset?.id
     )
 }

@@ -27,9 +27,10 @@ import javax.inject.Inject
 sealed class TranscriptionState {
     data object Idle : TranscriptionState()
     data class Transcribing(val progress: Float) : TranscriptionState()
+    data object TranscriptionCompleted : TranscriptionState()
     data object GeneratingSummary : TranscriptionState()
     data object Completed : TranscriptionState()
-    data class Error(val message: String) : TranscriptionState()
+    data class Error(val message: String, val hasTranscription: Boolean = false) : TranscriptionState()
 }
 
 sealed class ContinuationState {
@@ -136,21 +137,88 @@ class RecordingDetailViewModel @Inject constructor(
                 // Update uploading status
                 recordingRepository.updateRecording(rec.copy(isUploading = true))
 
-                // Transcribe
-                _transcriptionState.value = TranscriptionState.Transcribing(0.3f)
+                // Step 1: Transcribe audio
+                _transcriptionState.value = TranscriptionState.Transcribing(0.5f)
                 val transcription = transcriptionRepository.transcribeAudio(rec.audioFilePath)
 
-                // Generate summary
+                // Immediately update with transcription result
+                recordingRepository.updateRecording(
+                    rec.copy(
+                        transcriptionText = transcription,
+                        isTranscribed = true,
+                        isSummaryGenerating = true
+                    )
+                )
+                loadRecording()
+                _transcriptionState.value = TranscriptionState.TranscriptionCompleted
+
+                // Step 2: Generate summary
                 _transcriptionState.value = TranscriptionState.GeneratingSummary
+                try {
+                    val summary = transcriptionRepository.generateSummary(
+                        transcription = transcription,
+                        preset = rec.preset
+                    )
+
+                    // Step 3: Generate title
+                    val title = transcriptionRepository.generateTitle(summary)
+
+                    // Final update with summary and title
+                    recordingRepository.updateTranscriptionResult(
+                        id = rec.id,
+                        transcription = transcription,
+                        summary = summary,
+                        title = title
+                    )
+
+                    // Update isSummaryGenerating flag
+                    val currentRec = recordingRepository.getRecordingById(rec.id)
+                    currentRec?.let {
+                        recordingRepository.updateRecording(it.copy(isSummaryGenerating = false, isUploading = false))
+                    }
+
+                    loadRecording()
+                    _transcriptionState.value = TranscriptionState.Completed
+
+                } catch (summaryError: Exception) {
+                    // Summary failed but transcription succeeded
+                    val currentRec = recordingRepository.getRecordingById(rec.id)
+                    currentRec?.let {
+                        recordingRepository.updateRecording(it.copy(isSummaryGenerating = false, isUploading = false))
+                    }
+                    loadRecording()
+                    _transcriptionState.value = TranscriptionState.Error(
+                        message = "Не удалось создать саммари: ${summaryError.message}",
+                        hasTranscription = true
+                    )
+                }
+
+            } catch (e: Exception) {
+                // Complete failure - no transcription
+                _transcriptionState.value = TranscriptionState.Error(
+                    message = e.message ?: "Ошибка транскрипции",
+                    hasTranscription = false
+                )
+                recordingRepository.updateRecording(rec.copy(isUploading = false, isSummaryGenerating = false))
+            }
+        }
+    }
+
+    fun regenerateSummary() {
+        val rec = _recording.value ?: return
+        val transcription = rec.transcriptionText ?: return
+
+        viewModelScope.launch {
+            _transcriptionState.value = TranscriptionState.GeneratingSummary
+            recordingRepository.updateRecording(rec.copy(isSummaryGenerating = true))
+
+            try {
                 val summary = transcriptionRepository.generateSummary(
                     transcription = transcription,
                     preset = rec.preset
                 )
+                val title = transcriptionRepository.generateTitle(summary)
 
-                // Generate title
-                val title = transcriptionRepository.generateTitle(transcription)
-
-                // Update recording
                 recordingRepository.updateTranscriptionResult(
                     id = rec.id,
                     transcription = transcription,
@@ -158,16 +226,16 @@ class RecordingDetailViewModel @Inject constructor(
                     title = title
                 )
 
-                // Reload recording
+                recordingRepository.updateRecording(rec.copy(isSummaryGenerating = false))
                 loadRecording()
-
                 _transcriptionState.value = TranscriptionState.Completed
 
             } catch (e: Exception) {
-                _transcriptionState.value = TranscriptionState.Error(e.message ?: "Ошибка транскрипции")
-
-                // Reset uploading status
-                recordingRepository.updateRecording(rec.copy(isUploading = false))
+                recordingRepository.updateRecording(rec.copy(isSummaryGenerating = false))
+                _transcriptionState.value = TranscriptionState.Error(
+                    message = "Ошибка генерации саммари: ${e.message}",
+                    hasTranscription = true
+                )
             }
         }
     }

@@ -155,6 +155,9 @@ fun VantaNavHost(
                 RecordingScreen(
                     onRecordingCompleted = { recordingId ->
                         navController.navigate(Screen.RecordingDetail.createRoute(recordingId))
+                    },
+                    onNavigateToRecording = { recordingId ->
+                        navController.navigate(Screen.RecordingDetail.createRoute(recordingId))
                     }
                 )
             }

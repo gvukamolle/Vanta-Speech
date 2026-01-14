@@ -7,6 +7,8 @@ struct RecordingDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var player = AudioPlayer()
     @State private var isTranscribing = false
+    @State private var isGeneratingSummary = false
+    @State private var summaryError: String? = nil
     @State private var showError = false
     @State private var errorMessage = ""
     @State private var showTranscriptionSheet = false
@@ -35,7 +37,8 @@ struct RecordingDetailView: View {
                 }
 
                 // Content Tabs (Transcription / Summary)
-                if recording.isTranscribed {
+                // Show if we have transcription (even if summary is still generating)
+                if recording.transcriptionText != nil {
                     contentSection
                 }
             }
@@ -297,24 +300,49 @@ struct RecordingDetailView: View {
     // MARK: - Content Section
 
     private var contentSection: some View {
-        HStack(spacing: 12) {
-            Button {
-                showTranscriptionSheet = true
-            } label: {
-                Label("Транскрипция", systemImage: "text.bubble")
-            }
-            .buttonStyle(.bordered)
-            .tint(.accentColor)
-            .disabled(recording.transcriptionText == nil)
+        VStack(spacing: 12) {
+            HStack(spacing: 12) {
+                Button {
+                    showTranscriptionSheet = true
+                } label: {
+                    Label("Транскрипция", systemImage: "text.bubble")
+                }
+                .buttonStyle(.bordered)
+                .tint(.accentColor)
+                .disabled(recording.transcriptionText == nil)
 
-            Button {
-                showSummarySheet = true
-            } label: {
-                Label("Саммари", systemImage: "doc.text")
+                Button {
+                    showSummarySheet = true
+                } label: {
+                    HStack(spacing: 6) {
+                        if isGeneratingSummary || recording.isSummaryGenerating {
+                            ProgressView()
+                                .scaleEffect(0.7)
+                            Text("Генерируем...")
+                        } else {
+                            Label("Саммари", systemImage: "doc.text")
+                        }
+                    }
+                }
+                .buttonStyle(.bordered)
+                .tint(.accentColor)
+                .disabled(recording.summaryText == nil && !isGeneratingSummary && !recording.isSummaryGenerating)
             }
-            .buttonStyle(.bordered)
-            .tint(.accentColor)
-            .disabled(recording.summaryText == nil)
+
+            // Retry button if summary failed
+            if summaryError != nil && recording.summaryText == nil && !isGeneratingSummary {
+                Button {
+                    regenerateSummary()
+                } label: {
+                    HStack {
+                        Image(systemName: "arrow.clockwise")
+                        Text("Повторить генерацию саммари")
+                    }
+                    .font(.subheadline)
+                }
+                .buttonStyle(.bordered)
+                .tint(.orange)
+            }
         }
         .sheet(isPresented: $showTranscriptionSheet) {
             ContentSheetView(
@@ -391,25 +419,54 @@ struct RecordingDetailView: View {
     private func transcribeRecording() {
         isTranscribing = true
         recording.isUploading = true
+        summaryError = nil
 
         Task {
             do {
                 let service = TranscriptionService()
                 let audioURL = URL(fileURLWithPath: recording.audioFileURL)
-                // Use recording's preset or default to projectMeeting
                 let preset = recording.preset ?? .projectMeeting
-                let result = try await service.transcribe(audioFileURL: audioURL, preset: preset)
 
-                await MainActor.run {
-                    recording.transcriptionText = result.transcription
-                    recording.summaryText = result.summary
-                    // Update title with AI-generated one if available
-                    if let generatedTitle = result.generatedTitle {
-                        recording.title = generatedTitle
+                _ = try await service.transcribeWithProgress(
+                    audioFileURL: audioURL,
+                    preset: preset
+                ) { stage in
+                    await MainActor.run {
+                        switch stage {
+                        case .transcriptionCompleted(let text):
+                            // Show transcription immediately
+                            recording.transcriptionText = text
+                            recording.isTranscribed = true
+                            isTranscribing = false
+
+                        case .generatingSummary:
+                            isGeneratingSummary = true
+                            recording.isSummaryGenerating = true
+
+                        case .summaryCompleted(let summary):
+                            recording.summaryText = summary
+                            isGeneratingSummary = false
+                            recording.isSummaryGenerating = false
+
+                        case .completed(let result):
+                            // Update title with AI-generated one if available
+                            if let generatedTitle = result.generatedTitle {
+                                recording.title = generatedTitle
+                            }
+                            recording.isUploading = false
+
+                        case .error(let error):
+                            // If transcription already exists, this is a summary error
+                            if recording.transcriptionText != nil {
+                                summaryError = error.localizedDescription
+                                isGeneratingSummary = false
+                                recording.isSummaryGenerating = false
+                            }
+
+                        default:
+                            break
+                        }
                     }
-                    recording.isTranscribed = true
-                    recording.isUploading = false
-                    isTranscribing = false
                 }
             } catch {
                 await MainActor.run {
@@ -417,7 +474,41 @@ struct RecordingDetailView: View {
                     showError = true
                     recording.isUploading = false
                     isTranscribing = false
+                    isGeneratingSummary = false
+                    recording.isSummaryGenerating = false
                     debugCaptureError(error, context: "Transcription in RecordingDetailView")
+                }
+            }
+        }
+    }
+
+    private func regenerateSummary() {
+        guard let transcription = recording.transcriptionText else { return }
+
+        isGeneratingSummary = true
+        recording.isSummaryGenerating = true
+        summaryError = nil
+
+        Task {
+            do {
+                let service = TranscriptionService()
+                let preset = recording.preset ?? .projectMeeting
+                let (summary, title) = try await service.summarize(text: transcription, preset: preset)
+
+                await MainActor.run {
+                    recording.summaryText = summary
+                    if let generatedTitle = title {
+                        recording.title = generatedTitle
+                    }
+                    isGeneratingSummary = false
+                    recording.isSummaryGenerating = false
+                }
+            } catch {
+                await MainActor.run {
+                    summaryError = error.localizedDescription
+                    isGeneratingSummary = false
+                    recording.isSummaryGenerating = false
+                    debugCaptureError(error, context: "Regenerate summary in RecordingDetailView")
                 }
             }
         }
