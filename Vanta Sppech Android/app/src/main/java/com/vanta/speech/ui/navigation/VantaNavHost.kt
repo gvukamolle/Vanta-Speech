@@ -35,7 +35,7 @@ import com.vanta.speech.feature.auth.LoginScreen
 import com.vanta.speech.feature.library.LibraryScreen
 import com.vanta.speech.feature.library.RecordingDetailScreen
 import com.vanta.speech.feature.recording.RecordingScreen
-import com.vanta.speech.feature.settings.EWSCalendarSettingsScreen
+import com.vanta.speech.feature.settings.EASCalendarSettingsScreen
 import com.vanta.speech.feature.settings.OutlookCalendarSettingsScreen
 import com.vanta.speech.feature.settings.PresetSettingsScreen
 import com.vanta.speech.feature.settings.RealtimeSettingsScreen
@@ -173,8 +173,8 @@ fun VantaNavHost(
                     onNavigateToOutlook = {
                         navController.navigate(Screen.OutlookSettings.route)
                     },
-                    onNavigateToEWS = {
-                        navController.navigate(Screen.EWSSettings.route)
+                    onNavigateToEAS = {
+                        navController.navigate(Screen.EASSettings.route)
                     },
                     onNavigateToPresets = {
                         navController.navigate(Screen.PresetSettings.route)
@@ -189,8 +189,8 @@ fun VantaNavHost(
                     onNavigateBack = { navController.popBackStack() }
                 )
             }
-            composable(Screen.EWSSettings.route) {
-                EWSCalendarSettingsScreen(
+            composable(Screen.EASSettings.route) {
+                EASCalendarSettingsScreen(
                     onNavigateBack = { navController.popBackStack() }
                 )
             }

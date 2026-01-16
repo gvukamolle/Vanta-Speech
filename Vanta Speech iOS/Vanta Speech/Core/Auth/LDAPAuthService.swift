@@ -137,10 +137,9 @@ actor LDAPAuthService {
             var responseBuffer = [UInt8](repeating: 0, count: 1024)
             let bytesRead = input.read(&responseBuffer, maxLength: responseBuffer.count)
 
-            input.close()
-            output.close()
-
             guard bytesRead > 0 else {
+                input.close()
+                output.close()
                 continuation.resume(throwing: AuthError.readError)
                 return
             }
@@ -149,18 +148,243 @@ actor LDAPAuthService {
             let responseData = Data(responseBuffer.prefix(bytesRead))
             let parseResult = parseLDAPBindResponse(response: responseData)
 
-            if parseResult.success {
-                let session = UserSession(
-                    username: username,
-                    displayName: username,
-                    email: nil
-                )
-                continuation.resume(returning: session)
-            } else {
+            guard parseResult.success else {
+                input.close()
+                output.close()
                 let errorMsg = "resultCode=\(parseResult.resultCode), \(parseResult.errorMessage), bytes=\(bytesRead), hex=\(responseData.prefix(50).map { String(format: "%02X", $0) }.joined(separator: " "))"
                 continuation.resume(throwing: AuthError.serverError(errorMsg))
+                return
             }
+
+            // Bind successful - now perform LDAP Search to get user attributes
+            let userAttributes = self.performLDAPSearch(
+                input: input,
+                output: output,
+                username: username
+            )
+
+            input.close()
+            output.close()
+
+            let session = UserSession(
+                username: username,
+                displayName: userAttributes.displayName ?? username,
+                email: userAttributes.email
+            )
+            continuation.resume(returning: session)
         }
+    }
+
+    // MARK: - LDAP Search Implementation
+
+    /// Performs LDAP Search to retrieve user attributes (displayName, mail)
+    private func performLDAPSearch(
+        input: InputStream,
+        output: OutputStream,
+        username: String
+    ) -> (displayName: String?, email: String?) {
+        // Build LDAP Search Request
+        let searchRequest = buildLDAPSearchRequest(username: username, messageID: 2)
+
+        // Send search request
+        let bytesWritten = searchRequest.withUnsafeBytes { buffer in
+            output.write(buffer.bindMemory(to: UInt8.self).baseAddress!, maxLength: searchRequest.count)
+        }
+
+        guard bytesWritten == searchRequest.count else {
+            return (nil, nil)
+        }
+
+        // Read search response (may need multiple reads for large responses)
+        var allResponseData = Data()
+        var responseBuffer = [UInt8](repeating: 0, count: 4096)
+
+        // Read initial response
+        let bytesRead = input.read(&responseBuffer, maxLength: responseBuffer.count)
+        guard bytesRead > 0 else {
+            return (nil, nil)
+        }
+        allResponseData.append(contentsOf: responseBuffer.prefix(bytesRead))
+
+        // Parse search response to extract attributes
+        return parseLDAPSearchResponse(response: allResponseData)
+    }
+
+    /// Build LDAP Search Request (ASN.1 BER encoded)
+    private func buildLDAPSearchRequest(username: String, messageID: Int) -> Data {
+        var request = Data()
+
+        // Message ID
+        let messageIDBytes: [UInt8] = [0x02, 0x01, UInt8(messageID)]
+
+        // Search Request (application 3)
+        var searchRequestContent = Data()
+
+        // Base DN (octet string)
+        let baseDNBytes = Self.ldapBaseDN.data(using: .utf8) ?? Data()
+        searchRequestContent.append(0x04)
+        searchRequestContent.append(contentsOf: encodeLength(baseDNBytes.count))
+        searchRequestContent.append(baseDNBytes)
+
+        // Scope: subtree (2) - enumerated
+        searchRequestContent.append(contentsOf: [0x0A, 0x01, 0x02])
+
+        // DerefAliases: neverDerefAliases (0) - enumerated
+        searchRequestContent.append(contentsOf: [0x0A, 0x01, 0x00])
+
+        // SizeLimit (integer, 0 = no limit)
+        searchRequestContent.append(contentsOf: [0x02, 0x01, 0x01])
+
+        // TimeLimit (integer, 0 = no limit)
+        searchRequestContent.append(contentsOf: [0x02, 0x01, 0x00])
+
+        // TypesOnly (boolean, false)
+        searchRequestContent.append(contentsOf: [0x01, 0x01, 0x00])
+
+        // Filter: (sAMAccountName=username)
+        let filterContent = buildEqualityFilter(attribute: "sAMAccountName", value: username)
+        searchRequestContent.append(filterContent)
+
+        // Attributes to return: displayName, mail
+        var attributesSequence = Data()
+        for attr in ["displayName", "mail"] {
+            let attrBytes = attr.data(using: .utf8) ?? Data()
+            attributesSequence.append(0x04)
+            attributesSequence.append(contentsOf: encodeLength(attrBytes.count))
+            attributesSequence.append(attrBytes)
+        }
+        searchRequestContent.append(0x30) // Sequence tag
+        searchRequestContent.append(contentsOf: encodeLength(attributesSequence.count))
+        searchRequestContent.append(attributesSequence)
+
+        // Wrap in Search Request (application 3)
+        var searchRequest = Data()
+        searchRequest.append(0x63) // Application 3 (Search Request)
+        searchRequest.append(contentsOf: encodeLength(searchRequestContent.count))
+        searchRequest.append(searchRequestContent)
+
+        // Build complete message
+        var messageContent = Data()
+        messageContent.append(contentsOf: messageIDBytes)
+        messageContent.append(searchRequest)
+
+        // Wrap in LDAP Message sequence
+        request.append(0x30)
+        request.append(contentsOf: encodeLength(messageContent.count))
+        request.append(messageContent)
+
+        return request
+    }
+
+    /// Build LDAP Equality Filter: (attribute=value)
+    private func buildEqualityFilter(attribute: String, value: String) -> Data {
+        var filter = Data()
+
+        let attrBytes = attribute.data(using: .utf8) ?? Data()
+        let valueBytes = value.data(using: .utf8) ?? Data()
+
+        // AttributeValueAssertion content
+        var content = Data()
+        // Attribute description (octet string)
+        content.append(0x04)
+        content.append(contentsOf: encodeLength(attrBytes.count))
+        content.append(attrBytes)
+        // Assertion value (octet string)
+        content.append(0x04)
+        content.append(contentsOf: encodeLength(valueBytes.count))
+        content.append(valueBytes)
+
+        // Wrap in equalityMatch (context-specific 3)
+        filter.append(0xA3)
+        filter.append(contentsOf: encodeLength(content.count))
+        filter.append(content)
+
+        return filter
+    }
+
+    /// Parse LDAP Search Response to extract displayName and mail attributes
+    private func parseLDAPSearchResponse(response: Data) -> (displayName: String?, email: String?) {
+        var displayName: String?
+        var email: String?
+
+        let bytes = [UInt8](response)
+
+        // Look for SearchResultEntry (tag 0x64)
+        // Structure: SEQUENCE { messageID, searchResultEntry { objectName, attributes } }
+
+        var i = 0
+        while i < bytes.count - 4 {
+            // Look for octet string (0x04) which might contain attribute names/values
+            if bytes[i] == 0x04 {
+                let lengthInfo = decodeLength(bytes: bytes, startIndex: i + 1)
+                let valueStart = i + 1 + lengthInfo.bytesUsed
+                let valueEnd = valueStart + lengthInfo.length
+
+                if valueEnd <= bytes.count {
+                    let valueData = Data(bytes[valueStart..<valueEnd])
+                    if let stringValue = String(data: valueData, encoding: .utf8) {
+                        // Check if this is an attribute name we're looking for
+                        if stringValue.lowercased() == "displayname" {
+                            // Next octet string should be the value
+                            let nextValueResult = findNextOctetString(bytes: bytes, startIndex: valueEnd)
+                            if let value = nextValueResult {
+                                displayName = value
+                            }
+                        } else if stringValue.lowercased() == "mail" {
+                            // Next octet string should be the value
+                            let nextValueResult = findNextOctetString(bytes: bytes, startIndex: valueEnd)
+                            if let value = nextValueResult {
+                                email = value
+                            }
+                        }
+                    }
+                }
+            }
+            i += 1
+        }
+
+        return (displayName, email)
+    }
+
+    /// Decode ASN.1 BER length
+    private func decodeLength(bytes: [UInt8], startIndex: Int) -> (length: Int, bytesUsed: Int) {
+        guard startIndex < bytes.count else { return (0, 0) }
+
+        let firstByte = bytes[startIndex]
+        if firstByte < 128 {
+            return (Int(firstByte), 1)
+        } else {
+            let numBytes = Int(firstByte & 0x7F)
+            guard startIndex + numBytes < bytes.count else { return (0, 1) }
+
+            var length = 0
+            for j in 0..<numBytes {
+                length = (length << 8) | Int(bytes[startIndex + 1 + j])
+            }
+            return (length, 1 + numBytes)
+        }
+    }
+
+    /// Find the next octet string value after a given index
+    private func findNextOctetString(bytes: [UInt8], startIndex: Int) -> String? {
+        var i = startIndex
+        // Skip SET tag if present (0x31)
+        while i < bytes.count - 2 {
+            if bytes[i] == 0x04 {
+                let lengthInfo = decodeLength(bytes: bytes, startIndex: i + 1)
+                let valueStart = i + 1 + lengthInfo.bytesUsed
+                let valueEnd = valueStart + lengthInfo.length
+
+                if valueEnd <= bytes.count && lengthInfo.length > 0 {
+                    let valueData = Data(bytes[valueStart..<valueEnd])
+                    return String(data: valueData, encoding: .utf8)
+                }
+            }
+            i += 1
+            // Don't search too far
+            if i - startIndex > 20 { break }
+        }
+        return nil
     }
 
     // MARK: - LDAP Protocol Helpers

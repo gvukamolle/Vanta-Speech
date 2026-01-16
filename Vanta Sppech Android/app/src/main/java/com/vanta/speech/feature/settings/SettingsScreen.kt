@@ -61,7 +61,7 @@ import com.vanta.speech.ui.theme.VantaColors
 @Composable
 fun SettingsScreen(
     onNavigateToOutlook: () -> Unit = {},
-    onNavigateToEWS: () -> Unit = {},
+    onNavigateToEAS: () -> Unit = {},
     onNavigateToPresets: () -> Unit = {},
     onNavigateToRealtime: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
@@ -177,9 +177,9 @@ fun SettingsScreen(
             SettingsCard {
                 SettingsNavigationItem(
                     icon = Icons.Default.Business,
-                    title = "Exchange Calendar (EWS)",
+                    title = "Exchange Calendar",
                     value = "On-Premises корпоративный",
-                    onClick = onNavigateToEWS
+                    onClick = onNavigateToEAS
                 )
 
                 SettingsDivider()

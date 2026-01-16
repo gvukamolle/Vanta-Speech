@@ -70,6 +70,9 @@ struct RecordingView: View {
                         }
                         .pickerStyle(.segmented)
 
+                        // Upcoming meetings from Exchange calendar
+                        UpcomingMeetingsSection()
+
                         // Today's recordings
                         TodayRecordingsSection()
                     }

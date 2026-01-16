@@ -7,7 +7,9 @@ final class KeychainManager {
 
     private let service = "com.vanta.speech"
     private let sessionKey = "user_session"
-    private let ewsCredentialsKey = "ews_credentials"
+    private let easCredentialsKey = "eas_credentials"
+    private let easDeviceIdKey = "eas_device_id"
+    private let easSyncStateKey = "eas_sync_state"
     private let googleRefreshTokenKey = "google_refresh_token"
     private let googleUserInfoKey = "google_user_info"
 
@@ -29,28 +31,87 @@ final class KeychainManager {
         delete(forKey: sessionKey)
     }
 
-    // MARK: - EWS Credentials Storage
+    // MARK: - EAS Credentials Storage
 
-    /// Save EWS credentials for Exchange Server authentication
-    func saveEWSCredentials(_ credentials: EWSCredentials) throws {
+    /// Save EAS credentials for Exchange ActiveSync authentication
+    func saveEASCredentials(_ credentials: EASCredentials) throws {
         let data = try JSONEncoder().encode(credentials)
-        try save(data: data, forKey: ewsCredentialsKey)
+        try save(data: data, forKey: easCredentialsKey)
     }
 
-    /// Load saved EWS credentials
-    func loadEWSCredentials() -> EWSCredentials? {
-        guard let data = load(forKey: ewsCredentialsKey) else { return nil }
-        return try? JSONDecoder().decode(EWSCredentials.self, from: data)
+    /// Load saved EAS credentials
+    func loadEASCredentials() -> EASCredentials? {
+        guard let data = load(forKey: easCredentialsKey) else { return nil }
+        return try? JSONDecoder().decode(EASCredentials.self, from: data)
     }
 
-    /// Delete EWS credentials
-    func deleteEWSCredentials() {
-        delete(forKey: ewsCredentialsKey)
+    /// Delete EAS credentials
+    func deleteEASCredentials() {
+        delete(forKey: easCredentialsKey)
     }
 
-    /// Check if EWS credentials are stored
-    var hasEWSCredentials: Bool {
-        loadEWSCredentials() != nil
+    /// Check if EAS credentials are stored
+    var hasEASCredentials: Bool {
+        loadEASCredentials() != nil
+    }
+
+    // MARK: - EAS Device ID
+
+    /// Get or create a persistent device ID for EAS
+    /// DeviceId must be alphanumeric only (A-Z, a-z, 0-9), max 32 characters per MS-ASCMD spec
+    func getOrCreateEASDeviceId() -> String {
+        // Try to load existing device ID
+        if let data = load(forKey: easDeviceIdKey),
+           let deviceId = String(data: data, encoding: .utf8),
+           isValidEASDeviceId(deviceId) {
+            return deviceId
+        }
+
+        // Generate new device ID - alphanumeric only, 32 characters
+        // Use UUID without dashes, take first 32 chars
+        let uuid = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+        let deviceId = String(uuid.prefix(32))
+
+        // Save it
+        if let data = deviceId.data(using: .utf8) {
+            try? save(data: data, forKey: easDeviceIdKey)
+        }
+
+        return deviceId
+    }
+
+    /// Check if device ID is valid per EAS spec (alphanumeric only, 1-32 chars)
+    private func isValidEASDeviceId(_ deviceId: String) -> Bool {
+        let alphanumeric = CharacterSet.alphanumerics
+        return deviceId.count >= 1 &&
+               deviceId.count <= 32 &&
+               deviceId.unicodeScalars.allSatisfy { alphanumeric.contains($0) }
+    }
+
+    // MARK: - EAS Sync State
+
+    /// Save EAS sync state
+    func saveEASSyncState(_ state: EASSyncState) throws {
+        let data = try JSONEncoder().encode(state)
+        try save(data: data, forKey: easSyncStateKey)
+    }
+
+    /// Load EAS sync state
+    func loadEASSyncState() -> EASSyncState? {
+        guard let data = load(forKey: easSyncStateKey) else { return nil }
+        return try? JSONDecoder().decode(EASSyncState.self, from: data)
+    }
+
+    /// Delete EAS sync state
+    func deleteEASSyncState() {
+        delete(forKey: easSyncStateKey)
+    }
+
+    /// Clear all EAS data (credentials, device ID, sync state)
+    func clearAllEASData() {
+        delete(forKey: easCredentialsKey)
+        delete(forKey: easDeviceIdKey)
+        delete(forKey: easSyncStateKey)
     }
 
     // MARK: - Google OAuth Storage

@@ -5,10 +5,12 @@ import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.vanta.speech.core.auth.model.UserSession
-import com.vanta.speech.core.ews.model.EWSCredentials
+import com.vanta.speech.core.eas.model.EASCredentials
+import com.vanta.speech.core.eas.model.EASSyncState
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -23,7 +25,9 @@ class SecurePreferencesManager @Inject constructor(
     companion object {
         private const val PREFS_FILE_NAME = "vanta_secure_prefs"
         private const val KEY_USER_SESSION = "user_session"
-        private const val KEY_EWS_CREDENTIALS = "ews_credentials"
+        private const val KEY_EAS_CREDENTIALS = "eas_credentials"
+        private const val KEY_EAS_DEVICE_ID = "eas_device_id"
+        private const val KEY_EAS_SYNC_STATE = "eas_sync_state"
         private const val KEY_GOOGLE_REFRESH_TOKEN = "google_refresh_token"
         private const val KEY_GOOGLE_USER_INFO = "google_user_info"
     }
@@ -76,12 +80,12 @@ class SecurePreferencesManager @Inject constructor(
 
     fun hasSession(): Boolean = loadSession() != null
 
-    // MARK: - EWS Credentials Storage
+    // MARK: - EAS Credentials Storage
 
-    fun saveEWSCredentials(credentials: EWSCredentials): Boolean {
+    fun saveEASCredentials(credentials: EASCredentials): Boolean {
         return try {
             val credentialsJson = json.encodeToString(credentials)
-            encryptedPrefs.edit().putString(KEY_EWS_CREDENTIALS, credentialsJson).apply()
+            encryptedPrefs.edit().putString(KEY_EAS_CREDENTIALS, credentialsJson).apply()
             true
         } catch (e: Exception) {
             e.printStackTrace()
@@ -89,21 +93,69 @@ class SecurePreferencesManager @Inject constructor(
         }
     }
 
-    fun loadEWSCredentials(): EWSCredentials? {
+    fun loadEASCredentials(): EASCredentials? {
         return try {
-            val credentialsJson = encryptedPrefs.getString(KEY_EWS_CREDENTIALS, null) ?: return null
-            json.decodeFromString<EWSCredentials>(credentialsJson)
+            val credentialsJson = encryptedPrefs.getString(KEY_EAS_CREDENTIALS, null) ?: return null
+            json.decodeFromString<EASCredentials>(credentialsJson)
         } catch (e: Exception) {
             e.printStackTrace()
             null
         }
     }
 
-    fun deleteEWSCredentials() {
-        encryptedPrefs.edit().remove(KEY_EWS_CREDENTIALS).apply()
+    fun deleteEASCredentials() {
+        encryptedPrefs.edit().remove(KEY_EAS_CREDENTIALS).apply()
     }
 
-    fun hasEWSCredentials(): Boolean = loadEWSCredentials() != null
+    fun hasEASCredentials(): Boolean = loadEASCredentials() != null
+
+    // MARK: - EAS Device ID
+
+    fun getOrCreateEASDeviceId(): String {
+        val existing = encryptedPrefs.getString(KEY_EAS_DEVICE_ID, null)
+        if (existing != null) {
+            return existing
+        }
+
+        val deviceId = "VantaSpeech_${UUID.randomUUID()}"
+        encryptedPrefs.edit().putString(KEY_EAS_DEVICE_ID, deviceId).apply()
+        return deviceId
+    }
+
+    // MARK: - EAS Sync State
+
+    fun saveEASSyncState(state: EASSyncState): Boolean {
+        return try {
+            val stateJson = json.encodeToString(state)
+            encryptedPrefs.edit().putString(KEY_EAS_SYNC_STATE, stateJson).apply()
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
+    fun loadEASSyncState(): EASSyncState? {
+        return try {
+            val stateJson = encryptedPrefs.getString(KEY_EAS_SYNC_STATE, null) ?: return null
+            json.decodeFromString<EASSyncState>(stateJson)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
+    fun deleteEASSyncState() {
+        encryptedPrefs.edit().remove(KEY_EAS_SYNC_STATE).apply()
+    }
+
+    fun clearAllEASData() {
+        encryptedPrefs.edit()
+            .remove(KEY_EAS_CREDENTIALS)
+            .remove(KEY_EAS_DEVICE_ID)
+            .remove(KEY_EAS_SYNC_STATE)
+            .apply()
+    }
 
     // MARK: - Google OAuth Storage (for future use)
 

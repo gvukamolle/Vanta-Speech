@@ -30,9 +30,11 @@ struct SettingsView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(session.displayName ?? session.username)
                                     .font(.body)
-                                Text(session.username)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                if let email = session.email, !email.isEmpty {
+                                    Text(email)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
                             }
                         }
                     }
@@ -93,14 +95,14 @@ struct SettingsView: View {
                 }
 
                 Section("Интеграции") {
-                    // Exchange Calendar (On-Premises EWS)
+                    // Exchange ActiveSync (On-Premises)
                     NavigationLink {
-                        EWSCalendarSettingsView()
+                        EASCalendarSettingsView()
                     } label: {
                         IntegrationRow(
                             name: "Exchange Calendar",
                             icon: "building.2",
-                            isConnected: EWSCalendarManager.shared.isConnected
+                            isConnected: EASCalendarManager.shared.isConnected
                         )
                     }
 

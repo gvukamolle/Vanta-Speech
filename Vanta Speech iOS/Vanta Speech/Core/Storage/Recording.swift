@@ -10,10 +10,47 @@ final class Recording {
     var audioFileURL: String
     var transcriptionText: String?
     var summaryText: String?
-    var isTranscribed: Bool
-    var isUploading: Bool
-    var isSummaryGenerating: Bool
+    var isTranscribed: Bool = false
+    var isUploading: Bool = false
+    var isSummaryGenerating: Bool = false
     var presetRawValue: String?
+
+    // MARK: - Calendar Meeting Link
+
+    /// ID of linked calendar event (from EAS)
+    var linkedMeetingId: String?
+
+    /// Subject of the linked meeting (for display when event not loaded)
+    var linkedMeetingSubject: String?
+
+    /// JSON-encoded array of attendee emails for sending summary
+    var linkedMeetingAttendeesJSON: String?
+
+    /// Organizer email for the linked meeting
+    var linkedMeetingOrganizerEmail: String?
+
+    /// Whether this recording has a linked calendar meeting
+    var hasLinkedMeeting: Bool {
+        linkedMeetingId != nil
+    }
+
+    /// Attendee emails parsed from JSON
+    var linkedMeetingAttendeeEmails: [String] {
+        get {
+            guard let json = linkedMeetingAttendeesJSON,
+                  let data = json.data(using: .utf8),
+                  let emails = try? JSONDecoder().decode([String].self, from: data) else {
+                return []
+            }
+            return emails
+        }
+        set {
+            if let data = try? JSONEncoder().encode(newValue),
+               let json = String(data: data, encoding: .utf8) {
+                linkedMeetingAttendeesJSON = json
+            }
+        }
+    }
 
     /// The meeting preset used for this recording
     var preset: RecordingPreset? {
@@ -61,5 +98,24 @@ extension Recording {
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
         return formatter.string(from: createdAt)
+    }
+
+    /// Link this recording to a calendar event
+    func linkToMeeting(_ event: EASCalendarEvent) {
+        linkedMeetingId = event.id
+        linkedMeetingSubject = event.subject
+        linkedMeetingAttendeeEmails = event.attendeeEmails
+        linkedMeetingOrganizerEmail = event.organizer?.email
+
+        // Update title to match meeting subject
+        title = event.subject
+    }
+
+    /// Unlink from calendar meeting
+    func unlinkFromMeeting() {
+        linkedMeetingId = nil
+        linkedMeetingSubject = nil
+        linkedMeetingAttendeesJSON = nil
+        linkedMeetingOrganizerEmail = nil
     }
 }

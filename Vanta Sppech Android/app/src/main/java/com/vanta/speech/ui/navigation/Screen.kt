@@ -6,7 +6,7 @@ sealed class Screen(val route: String) {
     data object Library : Screen("library")
     data object Settings : Screen("settings")
     data object OutlookSettings : Screen("settings/outlook")
-    data object EWSSettings : Screen("settings/ews")
+    data object EASSettings : Screen("settings/eas")
     data object PresetSettings : Screen("settings/presets")
     data object RealtimeSettings : Screen("settings/realtime")
     data object RecordingDetail : Screen("recording/{recordingId}") {
