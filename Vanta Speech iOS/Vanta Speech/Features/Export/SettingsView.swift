@@ -7,14 +7,18 @@ struct SettingsView: View {
 
     // Integration states - persisted
     @AppStorage("confluence_connected") private var confluenceConnected = false
-    @AppStorage("notion_connected") private var notionConnected = false
-    @AppStorage("googledocs_connected") private var googleDocsConnected = false
 
     // Preset settings
     @StateObject private var presetSettings = PresetSettings.shared
 
     // Auth manager
     @StateObject private var authManager = AuthenticationManager.shared
+
+    // Calendar manager
+    @StateObject private var calendarManager = EASCalendarManager.shared
+
+    // Debug manager
+    @StateObject private var debugManager = DebugManager.shared
 
     var body: some View {
         NavigationStack {
@@ -45,6 +49,19 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("Тип записи по умолчанию", systemImage: "waveform")
+                            .foregroundStyle(.secondary)
+
+                        Picker("Тип записи", selection: $defaultRecordingMode) {
+                            Text("Обычная").tag("standard")
+                            Text("Real-time").tag("realtime")
+                            Text("Импорт").tag("import")
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                    .padding(.vertical, 4)
+
                     NavigationLink {
                         PresetSettingsView()
                     } label: {
@@ -72,7 +89,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Запись")
                 } footer: {
-                    Text("Настройки для режима Real-time транскрипции.")
+                    Text("Выберите режим записи по умолчанию для главного экрана. Настройки для режима Real-time доступны в соответствующем разделе.")
                 }
 
                 Section("Оформление") {
@@ -83,8 +100,8 @@ struct SettingsView: View {
                     }
                 }
 
-                Section("Транскрипция") {
-                    Toggle("Авто-транскрипция после записи", isOn: $autoTranscribe)
+                Section("Расшифровка") {
+                    Toggle("Авто-расшифровка после записи", isOn: $autoTranscribe)
 
                     HStack {
                         Text("Сервер")
@@ -100,31 +117,9 @@ struct SettingsView: View {
                         EASCalendarSettingsView()
                     } label: {
                         IntegrationRow(
-                            name: "Exchange Calendar",
+                            name: "Календарь",
                             icon: "building.2",
-                            isConnected: EASCalendarManager.shared.isConnected
-                        )
-                    }
-
-                    // Outlook Calendar (Cloud via Graph API)
-                    NavigationLink {
-                        OutlookCalendarSettingsView()
-                    } label: {
-                        IntegrationRow(
-                            name: "Outlook Calendar",
-                            icon: "calendar",
-                            isConnected: OutlookCalendarManager.shared.isConnected
-                        )
-                    }
-
-                    // Google Docs
-                    NavigationLink {
-                        GoogleDocsSettingsView()
-                    } label: {
-                        IntegrationRow(
-                            name: "Google Docs",
-                            icon: "doc.text.fill",
-                            isConnected: GoogleDocsManager.shared.isSignedIn
+                            isConnected: calendarManager.isConnected
                         )
                     }
 
@@ -141,30 +136,40 @@ struct SettingsView: View {
                             isConnected: confluenceConnected
                         )
                     }
-
-                    // Notion (placeholder)
-                    NavigationLink {
-                        IntegrationSettingsView(
-                            service: "Notion",
-                            isConnected: $notionConnected
-                        )
-                    } label: {
-                        IntegrationRow(
-                            name: "Notion",
-                            icon: "doc.richtext",
-                            isConnected: notionConnected
-                        )
-                    }
                 }
 
                 Section("О приложении") {
                     VersionTapView()
                 }
 
+                // Debug section - visible only when debug mode is enabled
+                if debugManager.isDebugModeEnabled {
+                    Section {
+                        Toggle("Фейковые транскрипции", isOn: $debugManager.isFakeTranscriptionEnabled)
+
+                        Text("При включении вместо реальных запросов к серверу будут использоваться тестовые данные")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        Button("Выключить Debug Mode", role: .destructive) {
+                            debugManager.disableDebugMode()
+                        }
+                    } header: {
+                        Label("Debug Mode", systemImage: "ladybug")
+                    } footer: {
+                        Text("Режим отладки активен. Используйте фейковые транскрипции для тестирования без доступа к серверу.")
+                    }
+                }
+
                 Section {
                     Button("Удалить все записи", role: .destructive) {
                         // TODO: Implement clear all
                     }
+                }
+            }
+            .refreshable {
+                if calendarManager.isConnected {
+                    await calendarManager.forceFullSync()
                 }
             }
             .navigationTitle("Настройки")

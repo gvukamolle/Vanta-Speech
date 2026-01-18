@@ -65,6 +65,23 @@ struct VantaSpeechApp: App {
                             if !coordinator.audioRecorder.isRecording {
                                 await LiveActivityManager.shared.endActivityImmediately()
                             }
+
+                            // Полная синхронизация календаря при запуске
+                            let calendarManager = EASCalendarManager.shared
+                            if calendarManager.isConnected {
+                                await calendarManager.forceFullSync()
+                            }
+                        }
+                        .onChange(of: scenePhase) { oldPhase, newPhase in
+                            // Синхронизация календаря при возврате из фона
+                            if newPhase == .active && oldPhase == .background {
+                                Task {
+                                    let calendarManager = EASCalendarManager.shared
+                                    if calendarManager.isConnected {
+                                        await calendarManager.forceFullSync()
+                                    }
+                                }
+                            }
                         }
                 } else {
                     LoginView()
@@ -72,10 +89,6 @@ struct VantaSpeechApp: App {
             }
             .tint(.pinkVibrant)
             .vantaThemed()
-            .onOpenURL { url in
-                // Обработка MSAL callback для Outlook авторизации
-                _ = MSALAuthManager.handleMSALResponse(url, sourceApplication: nil)
-            }
             .sheet(isPresented: $debugManager.showErrorSheet) {
                 if let error = debugManager.lastError {
                     DebugErrorView(error: error)

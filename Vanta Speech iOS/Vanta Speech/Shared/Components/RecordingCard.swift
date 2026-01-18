@@ -184,7 +184,7 @@ struct RecordingCardLarge: View {
                         }
                         .foregroundStyle(Color.blueVibrant)
                     } else {
-                        Label("Готово к транскрипции", systemImage: "text.bubble")
+                        Label("Готово к расшифровке", systemImage: "text.bubble")
                             .font(.caption)
                             .foregroundStyle(Color.blueVibrant)
                     }

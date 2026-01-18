@@ -2,13 +2,13 @@ import Foundation
 
 /// Service for authenticating against Active Directory via LDAP
 actor LDAPAuthService {
-    // MARK: - Hardcoded LDAP Configuration
+    // MARK: - LDAP Configuration (from Env)
 
-    private static let ldapHost = "10.64.248.19"
-    private static let ldapPort = 389
-    private static let ldapBaseDN = "OU=MainOffice,DC=b2pos,DC=local"
-    private static let ldapUserSearchFilter = "(&(objectCategory=Person)(sAMAccountName=*))"
-    private static let useLDAPS = false
+    private static var ldapHost: String { Env.ldapHost }
+    private static var ldapPort: Int { Env.ldapPort }
+    private static var ldapBaseDN: String { Env.ldapBaseDN }
+    private static var ldapUserSearchFilter: String { Env.ldapUserSearchFilter }
+    private static var useLDAPS: Bool { Env.useLDAPS }
 
     private let session: URLSession
 

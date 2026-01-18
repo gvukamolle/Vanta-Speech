@@ -7,9 +7,10 @@ iOS приложение для записи, транскрипции и сам
 - **Audio Recording** - Локальная запись аудио встреч с поддержкой фоновой записи
 - **Transcription** - Отправка на сервер для распознавания речи (AI-powered)
 - **Summarization** - Автоматическое создание саммари встречи
+- **Calendar Integration** - Синхронизация с Exchange календарём (EAS), автоматическая привязка записей к встречам
 - **Playback** - Воспроизведение записей с удобным плеером
 - **Library** - Управление записями с поиском и фильтрацией
-- **Export** - Интеграция с Confluence, Notion, Google Docs (planned)
+- **Export** - Интеграция с Confluence (planned)
 
 ## Quick Start
 
@@ -40,6 +41,7 @@ VantaSpeech/
 - **AVFoundation** - Audio recording & playback
 - **FFmpegKit** - OGG/Opus conversion
 - **URLSession** - Async networking
+- **Exchange ActiveSync** - Calendar sync (WBXML protocol)
 
 ## Configuration
 
@@ -69,6 +71,18 @@ Response:
   "duration": 125.5
 }
 ```
+
+### Calendar Setup
+
+Для синхронизации с корпоративным календарём Exchange:
+
+```
+Настройки → Календарь → Подключить
+```
+
+Требуется:
+- URL сервера Exchange (например: `https://mail.company.com/Microsoft-Server-ActiveSync`)
+- Корпоративный логин и пароль
 
 ## Permissions
 

@@ -58,7 +58,7 @@ enum RecordingActivityStatus: String, Codable, Hashable {
         case .recording: return "Запись"
         case .paused: return "Пауза"
         case .stopped: return "Остановлено"
-        case .transcribing: return "Транскрипция..."
+        case .transcribing: return "Расшифровка..."
         case .completed: return "Готово"
         }
     }

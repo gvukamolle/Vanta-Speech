@@ -73,7 +73,7 @@ final class EASClient {
             osVersion: deviceInfo.osVersion,
             deviceId: credentials.deviceId
         )
-        print("[EAS] Provision request XML:\n\(requestXml)")
+        debugLog("Provision request XML:\n\(requestXml)", module: "EAS", level: .info)
         var request = try buildRequest(command: "Provision", credentials: credentials, body: requestXml)
         request.setValue("0", forHTTPHeaderField: "X-MS-PolicyKey") // No policy yet
 
@@ -91,7 +91,7 @@ final class EASClient {
 
         // Step 2: Acknowledge policy (NO DeviceInformation - causes SyntaxError)
         let ackXml = buildProvisionAckXML(policyKey: policyKey)
-        print("[EAS] Provision ack XML:\n\(ackXml)")
+        debugLog("Provision ack XML:\n\(ackXml)", module: "EAS", level: .info)
         var ackRequest = try buildRequest(command: "Provision", credentials: credentials, body: ackXml)
         ackRequest.setValue("0", forHTTPHeaderField: "X-MS-PolicyKey")
 
@@ -276,9 +276,17 @@ final class EASClient {
         }
 
         // For subsequent syncs, include all options
+        // FilterType for Calendar:
+        //   0 = No filter (all items) - may not work on all servers
+        //   4 = 2 weeks back
+        //   5 = 1 month back (includes all future events)
+        //   6 = 3 months back
+        //   7 = 6 months back
+        // Using FilterType 5 to ensure: 30 days back + all future events
+        // Note: No namespace prefixes needed - WBXML encoder handles code page switching automatically
         return """
         <?xml version="1.0" encoding="utf-8"?>
-        <Sync xmlns="AirSync" xmlns:calendar="Calendar">
+        <Sync>
             <Collections>
                 <Collection>
                     <SyncKey>\(syncKey)</SyncKey>
@@ -286,7 +294,8 @@ final class EASClient {
                     <GetChanges>\(getChanges ? "1" : "0")</GetChanges>
                     <WindowSize>100</WindowSize>
                     <Options>
-                        <BodyPreference xmlns="AirSyncBase">
+                        <FilterType>5</FilterType>
+                        <BodyPreference>
                             <Type>2</Type>
                             <TruncationSize>51200</TruncationSize>
                         </BodyPreference>
@@ -398,10 +407,10 @@ final class EASClient {
             let decoder = WBXMLDecoder(data: data)
             do {
                 let xmlString = try decoder.decode()
-                print("[EAS] Decoded WBXML to XML:\n\(xmlString.prefix(3000))")
+                debugLog("Decoded WBXML to XML:\n\(xmlString.prefix(3000))", module: "EAS", level: .info)
                 // Check if there are attendees in the response
                 if xmlString.contains("Attendee") || xmlString.contains("ttendee") {
-                    print("[EAS] Response contains Attendee data!")
+                    debugLog("Response contains Attendee data!", module: "EAS", level: .info)
                 }
                 return xmlString
             } catch {
@@ -466,6 +475,7 @@ struct FolderSyncResponse {
 struct SyncResponse {
     let syncKey: String
     let events: [EASCalendarEvent]
+    let deletedEventIds: [String]
     let status: Int
     let moreAvailable: Bool
 }

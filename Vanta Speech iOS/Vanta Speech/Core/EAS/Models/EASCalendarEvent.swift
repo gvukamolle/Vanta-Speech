@@ -1,5 +1,22 @@
 import Foundation
 
+// MARK: - Meeting Status
+
+/// EAS Meeting status values
+/// Используется для определения отмененных событий
+enum EASMeetingStatus: Int, Codable, Equatable {
+    case appointment = 0        // Встреча без участников (не meeting)
+    case meeting = 1            // Встреча с участниками
+    case received = 3           // Получено приглашение (организатор - другой)
+    case cancelled = 5          // Отменена организатором
+    case receivedCancelled = 7  // Получено приглашение и оно отменено
+
+    /// Проверяет, отменено ли событие
+    var isCancelled: Bool {
+        self == .cancelled || self == .receivedCancelled
+    }
+}
+
 /// Calendar event from EAS Sync response
 struct EASCalendarEvent: Codable, Equatable, Identifiable {
     /// Server-assigned event ID
@@ -32,10 +49,18 @@ struct EASCalendarEvent: Codable, Equatable, Identifiable {
     /// Recurrence pattern (optional)
     let recurrence: EASRecurrence?
 
+    /// Meeting status (для определения отмененных событий)
+    let meetingStatus: EASMeetingStatus?
+
     /// Client-generated ID for new events
     var clientId: String?
 
     // MARK: - Computed Properties
+
+    /// Проверяет, отменено ли событие
+    var isCancelled: Bool {
+        meetingStatus?.isCancelled ?? false
+    }
 
     /// Duration in minutes
     var durationMinutes: Int {
@@ -77,6 +102,7 @@ struct EASCalendarEvent: Codable, Equatable, Identifiable {
         attendees: [EASAttendee] = [],
         isAllDay: Bool = false,
         recurrence: EASRecurrence? = nil,
+        meetingStatus: EASMeetingStatus? = nil,
         clientId: String? = nil
     ) {
         self.id = id
@@ -89,6 +115,7 @@ struct EASCalendarEvent: Codable, Equatable, Identifiable {
         self.attendees = attendees
         self.isAllDay = isAllDay
         self.recurrence = recurrence
+        self.meetingStatus = meetingStatus
         self.clientId = clientId
     }
 
@@ -151,6 +178,7 @@ struct EASCalendarEvent: Codable, Equatable, Identifiable {
                         attendees: attendees,
                         isAllDay: isAllDay,
                         recurrence: nil, // Occurrences don't have recurrence
+                        meetingStatus: meetingStatus,
                         clientId: nil
                     )
                     occurrences.append(occurrence)

@@ -35,6 +35,12 @@ final class EASCalendarManager: ObservableObject {
 
         // Check if we have stored credentials
         isConnected = keychainManager.hasEASCredentials
+
+        // Load cached events from Keychain
+        if let cached = keychainManager.loadEASCachedEvents() {
+            cachedEvents = cached
+            debugLog("Loaded \(cached.count) cached events from Keychain", module: "EAS", level: .info)
+        }
     }
 
     // MARK: - Public API
@@ -69,6 +75,10 @@ final class EASCalendarManager: ObservableObject {
 
             isConnected = true
             lastError = nil
+
+            // Automatically sync events after successful connection
+            await syncEvents()
+
             return true
 
         } catch let error as EASError {
@@ -96,6 +106,41 @@ final class EASCalendarManager: ObservableObject {
         lastSyncDate = nil
     }
 
+    /// Force full sync - resets syncKey to get all events and replaces cache
+    func forceFullSync() async {
+        guard isConnected else {
+            lastError = .noCredentials
+            return
+        }
+
+        guard !isSyncing else {
+            debugLog("forceFullSync: sync already in progress, skipping", module: "EAS", level: .info)
+            return
+        }
+
+        // Set flag IMMEDIATELY to prevent race conditions
+        isSyncing = true
+
+        debugLog("Force full sync requested - resetting syncKey", module: "EAS", level: .info)
+
+        // Reset calendar sync key to trigger full sync
+        syncState.calendarSyncKey = "0"
+        try? keychainManager.saveEASSyncState(syncState)
+
+        // Use detached task to prevent SwiftUI from cancelling the sync
+        // when ScrollView .refreshable view updates
+        // IMPORTANT: isSyncing = false is set INSIDE the detached task
+        // to prevent premature flag reset if parent task is cancelled
+        Task.detached { @MainActor [weak self] in
+            await self?.performFullSyncInternal()
+            self?.isSyncing = false
+            debugLog("Force full sync completed", module: "EAS", level: .info)
+        }
+
+        // Don't await the detached task - it will complete independently
+        // This prevents SwiftUI task cancellation from affecting the sync
+    }
+
     /// Sync calendar events from server
     func syncEvents() async {
         guard isConnected else {
@@ -103,9 +148,19 @@ final class EASCalendarManager: ObservableObject {
             return
         }
 
-        guard !isSyncing else { return }
+        guard !isSyncing else {
+            debugLog("Sync already in progress, skipping", module: "EAS", level: .info)
+            return
+        }
 
         isSyncing = true
+        await performSyncInternal()
+        isSyncing = false
+    }
+
+    /// Internal sync implementation - called by both syncEvents() and forceFullSync()
+    /// IMPORTANT: Caller must set isSyncing = true before calling and = false after
+    private func performSyncInternal() async {
         lastError = nil
 
         do {
@@ -118,68 +173,73 @@ final class EASCalendarManager: ObservableObject {
                 throw EASError.calendarFolderNotFound
             }
 
-            // Check if this is initial sync (SyncKey = "0")
-            let isInitialSync = syncState.calendarSyncKey == "0"
+            // Use a loop instead of recursion to handle initial sync and moreAvailable
+            var continueSync = true
 
-            // Perform sync
-            var response = try await client.sync(
-                folderId: folderId,
-                syncKey: syncState.calendarSyncKey,
-                getChanges: !isInitialSync, // Don't request changes on initial sync
-                policyKey: syncState.policyKey ?? "0"
-            )
+            while continueSync {
+                continueSync = false  // Default to stopping after this iteration
 
-            // Handle provisioning required (status 142/144)
-            if response.status == 142 || response.status == 144 {
-                print("[EAS] Sync requires provisioning, status: \(response.status)")
-                try await performProvisioning()
+                // Check if this is initial sync (SyncKey = "0")
+                let isInitialSync = syncState.calendarSyncKey == "0"
 
-                // Retry sync with new policy key
-                response = try await client.sync(
+                debugLog("Starting sync iteration: syncKey=\(syncState.calendarSyncKey), isInitial=\(isInitialSync)", module: "EAS", level: .info)
+
+                // Perform sync
+                var response = try await client.sync(
                     folderId: folderId,
                     syncKey: syncState.calendarSyncKey,
-                    getChanges: !isInitialSync,
+                    getChanges: !isInitialSync, // Don't request changes on initial sync
                     policyKey: syncState.policyKey ?? "0"
                 )
-            }
 
-            // Check for errors (status 1 = success)
-            if response.status != 1 {
-                print("[EAS] Sync failed with status: \(response.status)")
-                throw EASError.serverError(statusCode: response.status, message: "Sync status: \(response.status)")
-            }
+                // Handle provisioning required (status 142/144)
+                if response.status == 142 || response.status == 144 {
+                    debugLog("Sync requires provisioning, status: \(response.status)", module: "EAS", level: .info)
+                    try await performProvisioning()
 
-            // Update sync key
-            syncState.calendarSyncKey = response.syncKey
-            try? keychainManager.saveEASSyncState(syncState)
+                    // Retry sync with new policy key
+                    response = try await client.sync(
+                        folderId: folderId,
+                        syncKey: syncState.calendarSyncKey,
+                        getChanges: !isInitialSync,
+                        policyKey: syncState.policyKey ?? "0"
+                    )
+                }
 
-            // If this was initial sync, we need to do a second sync to get actual events
-            if isInitialSync {
-                print("[EAS] Initial sync complete, SyncKey: \(response.syncKey). Fetching events...")
-                // Recursively call to get events with new SyncKey
-                isSyncing = false
-                await syncEvents()
-                return
-            }
+                // Check for errors (status 1 = success)
+                if response.status != 1 {
+                    debugLog("Sync failed with status: \(response.status)", module: "EAS", level: .error)
+                    throw EASError.serverError(statusCode: response.status, message: "Sync status: \(response.status)")
+                }
 
-            // Update events from response
-            if response.events.isEmpty {
-                print("[EAS] No events in response")
-            } else {
-                print("[EAS] Received \(response.events.count) events")
-                mergeEvents(response.events)
-            }
+                // Update sync key
+                syncState.calendarSyncKey = response.syncKey
+                try? keychainManager.saveEASSyncState(syncState)
 
-            syncState.lastSyncDate = Date()
-            try? keychainManager.saveEASSyncState(syncState)
-            lastSyncDate = syncState.lastSyncDate
+                // If this was initial sync, continue to get actual events
+                if isInitialSync {
+                    debugLog("Initial sync complete, SyncKey: \(response.syncKey). Continuing to fetch events...", module: "EAS", level: .info)
+                    continueSync = true
+                    continue
+                }
 
-            // Handle more available
-            if response.moreAvailable {
-                print("[EAS] More events available, continuing sync...")
-                isSyncing = false
-                await syncEvents()
-                return
+                // Update events from response
+                if response.events.isEmpty && response.deletedEventIds.isEmpty {
+                    debugLog("No events in response", module: "EAS", level: .info)
+                } else {
+                    debugLog("Received \(response.events.count) events, \(response.deletedEventIds.count) deletions", module: "EAS", level: .info)
+                    mergeEvents(response.events, deletedIds: response.deletedEventIds)
+                }
+
+                syncState.lastSyncDate = Date()
+                try? keychainManager.saveEASSyncState(syncState)
+                lastSyncDate = syncState.lastSyncDate
+
+                // Handle more available
+                if response.moreAvailable {
+                    debugLog("More events available, continuing sync...", module: "EAS", level: .info)
+                    continueSync = true
+                }
             }
 
         } catch let error as EASError {
@@ -190,8 +250,138 @@ final class EASCalendarManager: ObservableObject {
         } catch {
             lastError = .unknown(error.localizedDescription)
         }
+    }
 
-        isSyncing = false
+    /// Internal full sync implementation - replaces cache instead of merging
+    /// Used by forceFullSync() to avoid triggering @Published during sync
+    private func performFullSyncInternal() async {
+        lastError = nil
+        var allEvents: [EASCalendarEvent] = []
+
+        do {
+            // Ensure we have calendar folder
+            if !syncState.hasDiscoveredCalendar {
+                try await discoverCalendarFolder()
+            }
+
+            guard let folderId = syncState.calendarFolderId else {
+                throw EASError.calendarFolderNotFound
+            }
+
+            // Use a loop instead of recursion to handle initial sync and moreAvailable
+            var continueSync = true
+
+            while continueSync {
+                continueSync = false  // Default to stopping after this iteration
+
+                // Check if this is initial sync (SyncKey = "0")
+                let isInitialSync = syncState.calendarSyncKey == "0"
+
+                debugLog("Starting sync iteration: syncKey=\(syncState.calendarSyncKey), isInitial=\(isInitialSync)", module: "EAS", level: .info)
+
+                // Perform sync
+                var response = try await client.sync(
+                    folderId: folderId,
+                    syncKey: syncState.calendarSyncKey,
+                    getChanges: !isInitialSync, // Don't request changes on initial sync
+                    policyKey: syncState.policyKey ?? "0"
+                )
+
+                // Handle provisioning required (status 142/144)
+                if response.status == 142 || response.status == 144 {
+                    debugLog("Sync requires provisioning, status: \(response.status)", module: "EAS", level: .info)
+                    try await performProvisioning()
+
+                    // Retry sync with new policy key
+                    response = try await client.sync(
+                        folderId: folderId,
+                        syncKey: syncState.calendarSyncKey,
+                        getChanges: !isInitialSync,
+                        policyKey: syncState.policyKey ?? "0"
+                    )
+                }
+
+                // Check for errors (status 1 = success)
+                if response.status != 1 {
+                    debugLog("Sync failed with status: \(response.status)", module: "EAS", level: .error)
+                    throw EASError.serverError(statusCode: response.status, message: "Sync status: \(response.status)")
+                }
+
+                // Update sync key
+                syncState.calendarSyncKey = response.syncKey
+                try? keychainManager.saveEASSyncState(syncState)
+
+                // If this was initial sync, continue to get actual events
+                if isInitialSync {
+                    debugLog("Initial sync complete, SyncKey: \(response.syncKey). Continuing to fetch events...", module: "EAS", level: .info)
+                    continueSync = true
+                    continue
+                }
+
+                // Accumulate events (instead of merging)
+                if !response.events.isEmpty {
+                    debugLog("Received \(response.events.count) events in this batch", module: "EAS", level: .info)
+                    allEvents.append(contentsOf: response.events)
+                }
+
+                syncState.lastSyncDate = Date()
+                try? keychainManager.saveEASSyncState(syncState)
+                lastSyncDate = syncState.lastSyncDate
+
+                // Handle more available
+                if response.moreAvailable {
+                    debugLog("More events available, continuing sync...", module: "EAS", level: .info)
+                    continueSync = true
+                }
+            }
+
+            // After all iterations complete - replace cache with new events (single @Published trigger)
+            // No client-side filtering - show everything server returns
+            let calendar = Calendar.current
+            let now = Date()
+            // Wide range for recurring events expansion only
+            let rangeStart = calendar.date(byAdding: .month, value: -3, to: now) ?? now
+            let rangeEnd = calendar.date(byAdding: .month, value: 3, to: now) ?? now
+
+            // Process events: expand recurring events, no date filtering
+            var processedEvents: [EASCalendarEvent] = []
+
+            for event in allEvents {
+                // Skip cancelled events
+                if event.isCancelled {
+                    continue
+                }
+
+                if event.isRecurring {
+                    // Expand recurring event into occurrences
+                    let occurrences = event.expandOccurrences(from: rangeStart, to: rangeEnd)
+                    debugLog("Expanded recurring event '\(event.subject)' into \(occurrences.count) occurrences", module: "EAS", level: .info)
+                    processedEvents.append(contentsOf: occurrences)
+                } else {
+                    // Add single events without filtering
+                    processedEvents.append(event)
+                }
+            }
+
+            // Sort by start time
+            processedEvents.sort { $0.startTime < $1.startTime }
+
+            debugLog("Full sync complete. Replacing cache with \(processedEvents.count) events (from \(allEvents.count) raw)", module: "EAS", level: .info)
+            cachedEvents = processedEvents
+            try? keychainManager.saveEASCachedEvents(cachedEvents)
+
+        } catch let error as EASError {
+            debugLog("Full sync failed with EASError: \(error)", module: "EAS", level: .error)
+            lastError = error
+            if error.shouldClearCredentials {
+                disconnect()
+            }
+        } catch is CancellationError {
+            debugLog("Full sync was cancelled", module: "EAS", level: .warning)
+        } catch {
+            debugLog("Full sync failed with error: \(error.localizedDescription)", module: "EAS", level: .error)
+            lastError = .unknown(error.localizedDescription)
+        }
     }
 
     /// Create a calendar event (meeting summary)
@@ -245,7 +435,7 @@ final class EASCalendarManager: ObservableObject {
 
         // Status 108/142/144 means provisioning required
         if response.status == 108 || response.status == 142 || response.status == 144 {
-            print("[EAS] Provisioning required, status: \(response.status)")
+            debugLog("Provisioning required, status: \(response.status)", module: "EAS", level: .info)
             try await performProvisioning()
 
             // Retry FolderSync with new policy key
@@ -255,7 +445,7 @@ final class EASCalendarManager: ObservableObject {
 
         // Check for other errors (status 1 = success)
         if response.status != 1 {
-            print("[EAS] FolderSync failed with status: \(response.status)")
+            debugLog("FolderSync failed with status: \(response.status)", module: "EAS", level: .error)
             throw EASError.serverError(statusCode: response.status, message: "FolderSync status: \(response.status)")
         }
 
@@ -275,16 +465,16 @@ final class EASCalendarManager: ObservableObject {
     }
 
     private func performProvisioning() async throws {
-        print("[EAS] Starting provisioning...")
+        debugLog("Starting provisioning...", module: "EAS", level: .info)
 
         let provisionResponse = try await client.provision()
 
         if provisionResponse.isSuccess, let policyKey = provisionResponse.policyKey {
-            print("[EAS] Provisioning successful, policyKey: \(policyKey)")
+            debugLog("Provisioning successful, policyKey: \(policyKey)", module: "EAS", level: .info)
             syncState.policyKey = policyKey
             try? keychainManager.saveEASSyncState(syncState)
         } else {
-            print("[EAS] Provisioning failed, status: \(provisionResponse.status)")
+            debugLog("Provisioning failed, status: \(provisionResponse.status)", module: "EAS", level: .error)
             if provisionResponse.status == 2 {
                 throw EASError.provisioningDenied
             }
@@ -292,18 +482,43 @@ final class EASCalendarManager: ObservableObject {
         }
     }
 
-    private func mergeEvents(_ newEvents: [EASCalendarEvent]) {
+    private func mergeEvents(_ newEvents: [EASCalendarEvent], deletedIds: [String] = []) {
         var eventMap = Dictionary(uniqueKeysWithValues: cachedEvents.map { ($0.id, $0) })
 
-        // Date range for expanding recurring events: 30 days back, 60 days forward
-        let rangeStart = Calendar.current.date(byAdding: .day, value: -30, to: Date()) ?? Date()
-        let rangeEnd = Calendar.current.date(byAdding: .day, value: 60, to: Date()) ?? Date()
+        // Remove deleted events
+        for deletedId in deletedIds {
+            eventMap.removeValue(forKey: deletedId)
+            // Also remove occurrences for recurring events (id format: "baseId_occurrenceId")
+            let keysToRemove = eventMap.keys.filter { $0.hasPrefix("\(deletedId)_") }
+            for key in keysToRemove {
+                eventMap.removeValue(forKey: key)
+            }
+            debugLog("Removed deleted event: \(deletedId)", module: "EAS", level: .info)
+        }
+
+        let calendar = Calendar.current
+        let now = Date()
+
+        // Wide range for recurring events expansion only (no filtering)
+        let rangeStart = calendar.date(byAdding: .month, value: -3, to: now) ?? now
+        let rangeEnd = calendar.date(byAdding: .month, value: 3, to: now) ?? now
 
         for event in newEvents {
+            // Skip cancelled events
+            if event.isCancelled {
+                // Remove from cache if it was previously there
+                eventMap.removeValue(forKey: event.id)
+                let keysToRemove = eventMap.keys.filter { $0.hasPrefix("\(event.id)_") }
+                for key in keysToRemove {
+                    eventMap.removeValue(forKey: key)
+                }
+                continue
+            }
+
             if event.isRecurring {
                 // Expand recurring event into occurrences
                 let occurrences = event.expandOccurrences(from: rangeStart, to: rangeEnd)
-                print("[EAS] Expanded recurring event '\(event.subject)' into \(occurrences.count) occurrences")
+                debugLog("Expanded recurring event '\(event.subject)' into \(occurrences.count) occurrences", module: "EAS", level: .info)
                 for occurrence in occurrences {
                     eventMap[occurrence.id] = occurrence
                 }
@@ -312,7 +527,12 @@ final class EASCalendarManager: ObservableObject {
             }
         }
 
-        cachedEvents = Array(eventMap.values).sorted { $0.startTime < $1.startTime }
+        // No filtering - keep all events
+        cachedEvents = eventMap.values.sorted { $0.startTime < $1.startTime }
+
+        // Persist cached events to Keychain
+        try? keychainManager.saveEASCachedEvents(cachedEvents)
+        debugLog("Saved \(cachedEvents.count) events to Keychain cache", module: "EAS", level: .info)
     }
 
     // MARK: - Convenience
@@ -348,5 +568,25 @@ final class EASCalendarManager: ObservableObject {
     /// Get all events sorted chronologically
     var allEventsSorted: [EASCalendarEvent] {
         cachedEvents.sorted { $0.startTime < $1.startTime }
+    }
+
+    /// Find the most probable meeting for a recording based on start time proximity
+    func findMostProbableMeeting(for recording: Recording) -> EASCalendarEvent? {
+        let recordingStart = recording.createdAt
+        let calendar = Calendar.current
+
+        // Filter events for the same day as the recording
+        let sameDayEvents = cachedEvents.filter { event in
+            calendar.isDate(event.startTime, inSameDayAs: recordingStart)
+        }
+
+        guard !sameDayEvents.isEmpty else { return nil }
+
+        // Return event with minimum time difference from recording start
+        return sameDayEvents.min { event1, event2 in
+            let diff1 = abs(event1.startTime.timeIntervalSince(recordingStart))
+            let diff2 = abs(event2.startTime.timeIntervalSince(recordingStart))
+            return diff1 < diff2
+        }
     }
 }

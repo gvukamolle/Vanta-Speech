@@ -4,6 +4,7 @@ import SwiftData
 struct LibraryView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Recording.createdAt, order: .reverse) private var recordings: [Recording]
+    @StateObject private var calendarManager = EASCalendarManager.shared
 
     @State private var displayedMonth = Date()
     @State private var selectedDate: Date?
@@ -35,8 +36,17 @@ struct LibraryView: View {
                     if !recordings.isEmpty {
                         statsView
                     }
+
+                    if calendarManager.isConnected {
+                        meetingStatsView
+                    }
                 }
                 .padding()
+            }
+            .refreshable {
+                if calendarManager.isConnected {
+                    await calendarManager.forceFullSync()
+                }
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("История")
@@ -87,6 +97,38 @@ struct LibraryView: View {
                 value: "\(recordingsCountForMonth)",
                 icon: "calendar",
                 color: .blueVibrant
+            )
+        }
+    }
+
+    // MARK: - Meeting Stats View
+
+    private var meetingStatsView: some View {
+        let calendarManager = EASCalendarManager.shared
+        let now = Date()
+
+        let todayMeetings = calendarManager.cachedEvents.filter { event in
+            calendar.isDate(event.startTime, inSameDayAs: now)
+        }
+
+        let weekFromNow = calendar.date(byAdding: .day, value: 7, to: now) ?? now
+        let weekMeetings = calendarManager.cachedEvents.filter { event in
+            event.startTime >= now && event.startTime <= weekFromNow
+        }
+
+        return HStack(spacing: 16) {
+            StatCard(
+                title: "Сегодня",
+                value: "\(todayMeetings.count)",
+                icon: "calendar.badge.clock",
+                color: .green
+            )
+
+            StatCard(
+                title: "На неделе",
+                value: "\(weekMeetings.count)",
+                icon: "calendar",
+                color: .blue
             )
         }
     }

@@ -22,6 +22,7 @@ struct RecordingView: View {
     @State private var showPresetPicker = false  // Для выбора пресета перед записью
 
     @StateObject private var presetSettings = PresetSettings.shared
+    @StateObject private var calendarManager = EASCalendarManager.shared
     @AppStorage("defaultRecordingMode") private var defaultRecordingMode = "standard"
 
     /// Текущий режим записи
@@ -78,6 +79,11 @@ struct RecordingView: View {
                     }
                     .padding()
                     .padding(.bottom, 100)
+                }
+                .refreshable {
+                    if calendarManager.isConnected {
+                        await calendarManager.forceFullSync()
+                    }
                 }
                 .background(Color(.systemGroupedBackground).opacity(0.9))
 

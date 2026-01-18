@@ -12,6 +12,7 @@ struct iPadLibraryContentView: View {
 
     @State private var displayedMonth = Date()
     @State private var selectedDate: Date?
+    @StateObject private var calendarManager = EASCalendarManager.shared
 
     private let calendar = Calendar.current
 
@@ -77,6 +78,11 @@ struct iPadLibraryContentView: View {
                 Spacer(minLength: 20)
             }
             .padding()
+        }
+        .refreshable {
+            if calendarManager.isConnected {
+                await calendarManager.forceFullSync()
+            }
         }
     }
 

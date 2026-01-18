@@ -2,14 +2,14 @@ import Foundation
 
 /// Service for transcription and summarization using OpenAI-compatible API
 actor TranscriptionService {
-    // MARK: - Configuration (hardcoded for internal use)
+    // MARK: - Configuration (from Env)
 
-    private static let baseURL = "http://10.10.40.9:8000/v1"
-    private static let apiKey = "sk-FtnWXOh3UZATJL7uNwwh6DgQdpHGWarH"
+    private static var baseURL: String { Env.transcriptionBaseURL }
+    private static var apiKey: String { Env.transcriptionAPIKey }
 
     // Models
-    private static let transcriptionModel = "gigaam-v3"
-    private static let summaryModel = "cod/gpt-oss:120b"
+    private static var transcriptionModel: String { Env.transcriptionModel }
+    private static var summaryModel: String { Env.summaryModel }
 
     private let session: URLSession
 
@@ -79,6 +79,22 @@ actor TranscriptionService {
     ///   - preset: The meeting type preset to use for summarization (defaults to projectMeeting)
     /// - Returns: TranscriptionResult with transcription, summary, and generated title
     func transcribe(audioFileURL: URL, preset: RecordingPreset = .projectMeeting) async throws -> TranscriptionResult {
+        // Check for debug mode with fake transcriptions
+        let useFake = await MainActor.run {
+            DebugManager.shared.isDebugModeEnabled &&
+            DebugManager.shared.isFakeTranscriptionEnabled
+        }
+
+        if useFake {
+            // Simulate network delay for realism
+            try await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
+            return TranscriptionResult(
+                transcription: DebugManager.fakeTranscription,
+                summary: DebugManager.fakeSummary,
+                generatedTitle: DebugManager.fakeTitle
+            )
+        }
+
         // Step 1: Transcribe audio using Whisper
         let transcription = try await transcribeAudio(fileURL: audioFileURL)
 
@@ -105,6 +121,34 @@ actor TranscriptionService {
         preset: RecordingPreset = .projectMeeting,
         onProgress: @escaping @Sendable (TranscriptionStage) async -> Void
     ) async throws -> TranscriptionResult {
+        // Check for debug mode with fake transcriptions
+        let useFake = await MainActor.run {
+            DebugManager.shared.isDebugModeEnabled &&
+            DebugManager.shared.isFakeTranscriptionEnabled
+        }
+
+        if useFake {
+            // Simulate the full flow with fake data
+            await onProgress(.transcribing)
+            try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+            await onProgress(.transcriptionCompleted(DebugManager.fakeTranscription))
+
+            await onProgress(.generatingSummary)
+            try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+            await onProgress(.summaryCompleted(DebugManager.fakeSummary))
+
+            await onProgress(.generatingTitle)
+            try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+
+            let result = TranscriptionResult(
+                transcription: DebugManager.fakeTranscription,
+                summary: DebugManager.fakeSummary,
+                generatedTitle: DebugManager.fakeTitle
+            )
+            await onProgress(.completed(result))
+            return result
+        }
+
         // Step 1: Notify transcription starting
         await onProgress(.transcribing)
 

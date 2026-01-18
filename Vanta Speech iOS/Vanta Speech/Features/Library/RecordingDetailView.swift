@@ -3,9 +3,12 @@ import SwiftData
 
 struct RecordingDetailView: View {
     @Bindable var recording: Recording
+    /// Available events for linking (optional, for DayRecordingsSheet context)
+    var availableEventsForLinking: [EASCalendarEvent] = []
     @EnvironmentObject var coordinator: RecordingCoordinator
     @Environment(\.dismiss) private var dismiss
     @StateObject private var player = AudioPlayer()
+    @StateObject private var calendarManager = EASCalendarManager.shared
     @State private var isTranscribing = false
     @State private var isGeneratingSummary = false
     @State private var summaryError: String? = nil
@@ -16,6 +19,13 @@ struct RecordingDetailView: View {
     @State private var audioLoadFailed = false
     @State private var showContinueRecordingSheet = false
     @State private var showContinueConfirmation = false
+    @State private var showEventPicker = false
+    @State private var showMeetingDetail = false
+
+    // Summary email
+    @StateObject private var summaryEmailManager = SummaryEmailManager.shared
+    @State private var showSendSummarySuccess = false
+    @State private var showSendSummaryError = false
 
     var body: some View {
         ScrollView {
@@ -40,6 +50,11 @@ struct RecordingDetailView: View {
                 // Show if we have transcription (even if summary is still generating)
                 if recording.transcriptionText != nil {
                     contentSection
+                }
+
+                // Meeting Link Section (after Transcription/Summary buttons)
+                if calendarManager.isConnected {
+                    meetingLinkSection
                 }
             }
             .padding()
@@ -87,67 +102,44 @@ struct RecordingDetailView: View {
     // MARK: - Header Card
 
     private var headerCard: some View {
-        VStack(spacing: 16) {
-            // Waveform visualization
-            ZStack {
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(
-                        LinearGradient(
-                            colors: [.pinkLight.opacity(0.4), .blueLight.opacity(0.4)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(height: 100)
+        VStack(spacing: 8) {
+            Text(recording.title)
+                .font(.title2)
+                .fontWeight(.bold)
+                .multilineTextAlignment(.center)
 
-                HStack(spacing: 3) {
-                    ForEach(0..<40, id: \.self) { i in
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(Color.pinkVibrant.opacity(0.6))
-                            .frame(width: 4, height: CGFloat.random(in: 15...60))
-                    }
-                }
+            HStack(spacing: 24) {
+                Label(recording.formattedDate, systemImage: "calendar")
+                Label(recording.formattedDuration, systemImage: "clock")
             }
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
 
-            VStack(spacing: 8) {
-                Text(recording.title)
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .multilineTextAlignment(.center)
+            // Status badges
+            HStack(spacing: 12) {
+                statusBadge(
+                    text: "M4A",
+                    color: .blueVibrant
+                )
 
-                HStack(spacing: 24) {
-                    Label(recording.formattedDate, systemImage: "calendar")
-                    Label(recording.formattedDuration, systemImage: "clock")
-                }
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-
-                // Status badges
-                HStack(spacing: 12) {
+                if recording.isTranscribed {
                     statusBadge(
-                        text: "M4A",
-                        color: .blueVibrant
+                        text: "Расшифровано",
+                        color: .pinkVibrant
                     )
-
-                    if recording.isTranscribed {
-                        statusBadge(
-                            text: "Транскрибировано",
-                            color: .pinkVibrant
-                        )
-                    }
-
-                    if recording.isUploading {
-                        HStack(spacing: 4) {
-                            ProgressView()
-                                .scaleEffect(0.7)
-                            Text("Обработка...")
-                        }
-                        .font(.caption)
-                        .foregroundStyle(Color.blueVibrant)
-                    }
                 }
-                .padding(.top, 4)
+
+                if recording.isUploading {
+                    HStack(spacing: 4) {
+                        ProgressView()
+                            .scaleEffect(0.7)
+                        Text("Обработка...")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(Color.blueVibrant)
+                }
             }
+            .padding(.top, 4)
         }
         .padding(20)
         .vantaGlassCard(cornerRadius: 28, shadowRadius: 0, tintOpacity: 0.15)
@@ -302,31 +294,68 @@ struct RecordingDetailView: View {
     private var contentSection: some View {
         VStack(spacing: 12) {
             HStack(spacing: 12) {
+                // Transcription Button - StatCard style
                 Button {
                     showTranscriptionSheet = true
                 } label: {
-                    Label("Транскрипция", systemImage: "text.bubble")
-                }
-                .buttonStyle(.bordered)
-                .tint(.accentColor)
-                .disabled(recording.transcriptionText == nil)
+                    HStack(spacing: 12) {
+                        ZStack {
+                            Circle()
+                                .fill(.ultraThinMaterial)
+                            Circle()
+                                .fill(Color.pinkVibrant.opacity(0.15))
+                            Image(systemName: "text.bubble")
+                                .font(.body)
+                                .foregroundStyle(Color.pinkVibrant)
+                        }
+                        .frame(width: 40, height: 40)
 
+                        Text("Расшифровка")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundStyle(.primary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .vantaGlassCard(cornerRadius: 16, shadowRadius: 0, tintOpacity: 0.15)
+                }
+                .buttonStyle(.plain)
+                .disabled(recording.transcriptionText == nil)
+                .opacity(recording.transcriptionText == nil ? 0.5 : 1.0)
+
+                // Summary Button - StatCard style
                 Button {
                     showSummarySheet = true
                 } label: {
-                    HStack(spacing: 6) {
-                        if isGeneratingSummary || recording.isSummaryGenerating {
-                            ProgressView()
-                                .scaleEffect(0.7)
-                            Text("Генерируем...")
-                        } else {
-                            Label("Саммари", systemImage: "doc.text")
+                    HStack(spacing: 12) {
+                        ZStack {
+                            Circle()
+                                .fill(.ultraThinMaterial)
+                            Circle()
+                                .fill(Color.pinkVibrant.opacity(0.15))
+                            if isGeneratingSummary || recording.isSummaryGenerating {
+                                ProgressView()
+                                    .scaleEffect(0.8)
+                            } else {
+                                Image(systemName: "doc.text")
+                                    .font(.body)
+                                    .foregroundStyle(Color.pinkVibrant)
+                            }
                         }
+                        .frame(width: 40, height: 40)
+
+                        Text(isGeneratingSummary || recording.isSummaryGenerating ? "Генерируем..." : "Саммари")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundStyle(.primary)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .vantaGlassCard(cornerRadius: 16, shadowRadius: 0, tintOpacity: 0.15)
                 }
-                .buttonStyle(.bordered)
-                .tint(.accentColor)
+                .buttonStyle(.plain)
                 .disabled(recording.summaryText == nil && !isGeneratingSummary && !recording.isSummaryGenerating)
+                .opacity((recording.summaryText == nil && !isGeneratingSummary && !recording.isSummaryGenerating) ? 0.5 : 1.0)
             }
 
             // Retry button if summary failed
@@ -346,7 +375,7 @@ struct RecordingDetailView: View {
         }
         .sheet(isPresented: $showTranscriptionSheet) {
             ContentSheetView(
-                title: "Транскрипция",
+                title: "Расшифровка",
                 icon: "text.bubble",
                 content: recording.transcriptionText ?? ""
             )
@@ -364,6 +393,231 @@ struct RecordingDetailView: View {
         }
     }
 
+    // MARK: - Meeting Link Section
+
+    /// Linked event from calendar (if recording is linked)
+    private var linkedEvent: EASCalendarEvent? {
+        guard let linkedId = recording.linkedMeetingId else { return nil }
+        return calendarManager.cachedEvents.first { $0.id == linkedId }
+    }
+
+    /// Events available for linking (excluding already linked ones)
+    private var eventsForLinking: [EASCalendarEvent] {
+        // Use provided events if available (from DayRecordingsSheet context)
+        if !availableEventsForLinking.isEmpty {
+            return availableEventsForLinking
+        }
+        // Otherwise, get events for the same day as the recording
+        let calendar = Calendar.current
+        return calendarManager.cachedEvents.filter { event in
+            calendar.isDate(event.startTime, inSameDayAs: recording.createdAt)
+        }
+    }
+
+    private var meetingLinkSection: some View {
+        VStack(spacing: 12) {
+            if recording.hasLinkedMeeting {
+                // Linked meeting card with pencil edit button
+                HStack(spacing: 0) {
+                    // Main area - tap to view meeting details
+                    Button {
+                        showMeetingDetail = true
+                    } label: {
+                        HStack(spacing: 12) {
+                            ZStack {
+                                Circle()
+                                    .fill(.ultraThinMaterial)
+                                Circle()
+                                    .fill(Color.blue.opacity(0.15))
+                                Image(systemName: "calendar")
+                                    .font(.body)
+                                    .foregroundStyle(.blue)
+                            }
+                            .frame(width: 40, height: 40)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(linkedEvent?.subject ?? recording.linkedMeetingSubject ?? "Встреча")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(1)
+
+                                if let event = linkedEvent {
+                                    HStack(spacing: 8) {
+                                        Text(formatMeetingTime(event.startTime))
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                        if !event.humanAttendees.isEmpty {
+                                            Text("•")
+                                                .foregroundStyle(.tertiary)
+                                            Text("\(event.humanAttendees.count) участн.")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+                                }
+                            }
+                            Spacer()
+                        }
+                        .padding(12)
+                    }
+                    .buttonStyle(.plain)
+
+                    // Pencil button - tap to change linked meeting
+                    Button {
+                        showEventPicker = true
+                    } label: {
+                        Image(systemName: "pencil")
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                .vantaGlassCard(cornerRadius: 16, shadowRadius: 0, tintOpacity: 0.10)
+
+                // Send Summary Button (if recording can send summary)
+                if recording.canSendSummary {
+                    sendSummaryButton
+                }
+
+            } else if !eventsForLinking.isEmpty {
+                // Not linked - show "Link to Event" button
+                Button {
+                    showEventPicker = true
+                } label: {
+                    HStack(spacing: 12) {
+                        ZStack {
+                            Circle()
+                                .fill(.ultraThinMaterial)
+                            Circle()
+                                .fill(Color.blue.opacity(0.15))
+                            Image(systemName: "link")
+                                .font(.body)
+                                .foregroundStyle(.blue)
+                        }
+                        .frame(width: 40, height: 40)
+
+                        Text("Связать с событием")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundStyle(.primary)
+
+                        Spacer()
+
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(12)
+                    .vantaGlassCard(cornerRadius: 16, shadowRadius: 0, tintOpacity: 0.10)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .sheet(isPresented: $showEventPicker) {
+            EventPickerSheetForRecording(
+                recording: recording,
+                events: eventsForLinking
+            )
+        }
+        .sheet(isPresented: $showMeetingDetail) {
+            if let event = linkedEvent {
+                MeetingDetailSheet(event: event)
+            }
+        }
+        .alert("Саммари отправлено", isPresented: $showSendSummarySuccess) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            let count = recording.linkedMeetingAttendeeEmails.count - 1 // excluding current user
+            Text("Саммари успешно отправлено \(max(count, 1)) участникам встречи")
+        }
+        .alert("Ошибка отправки", isPresented: $showSendSummaryError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(summaryEmailManager.lastError?.localizedDescription ?? "Не удалось отправить саммари")
+        }
+    }
+
+    // MARK: - Send Summary Button
+
+    private var sendSummaryButton: some View {
+        Button {
+            sendSummary()
+        } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(.ultraThinMaterial)
+                    Circle()
+                        .fill(Color.green.opacity(0.15))
+                    if summaryEmailManager.isSending {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                    } else {
+                        Image(systemName: recording.hasSentSummary ? "envelope.badge.fill" : "envelope")
+                            .font(.body)
+                            .foregroundStyle(.green)
+                    }
+                }
+                .frame(width: 40, height: 40)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(recording.hasSentSummary ? "Отправить повторно" : "Отправить саммари")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.primary)
+
+                    if recording.hasSentSummary, let sentAt = recording.summarySentAt {
+                        Text("Отправлено \(formattedSentDate(sentAt))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("\(recording.linkedMeetingAttendeeEmails.count) участников")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Spacer()
+
+                Image(systemName: "paperplane")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(12)
+            .vantaGlassCard(cornerRadius: 16, shadowRadius: 0, tintOpacity: 0.10)
+        }
+        .buttonStyle(.plain)
+        .disabled(summaryEmailManager.isSending)
+    }
+
+    private func sendSummary() {
+        Task {
+            let success = await summaryEmailManager.sendSummary(for: recording)
+            if success {
+                showSendSummarySuccess = true
+            } else {
+                showSendSummaryError = true
+            }
+        }
+    }
+
+    private func formattedSentDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ru_RU")
+        formatter.dateStyle = .short
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+
+    private func formatMeetingTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter.string(from: date)
+    }
+
     // MARK: - Share Menu
 
     @ViewBuilder
@@ -372,7 +626,7 @@ struct RecordingDetailView: View {
             Button {
                 copyTranscription()
             } label: {
-                Label("Копировать транскрипцию", systemImage: "doc.on.doc")
+                Label("Копировать расшифровку", systemImage: "doc.on.doc")
             }
 
             Button {
@@ -448,6 +702,11 @@ struct RecordingDetailView: View {
                             isGeneratingSummary = false
                             recording.isSummaryGenerating = false
 
+                            // Auto-send summary to meeting participants if linked
+                            Task {
+                                await SummaryEmailManager.shared.checkAndAutoSend(recording: recording)
+                            }
+
                         case .completed(let result):
                             // Update title with AI-generated one if available
                             if let generatedTitle = result.generatedTitle {
@@ -502,6 +761,11 @@ struct RecordingDetailView: View {
                     }
                     isGeneratingSummary = false
                     recording.isSummaryGenerating = false
+
+                    // Auto-send summary to meeting participants if linked
+                    Task {
+                        await SummaryEmailManager.shared.checkAndAutoSend(recording: recording)
+                    }
                 }
             } catch {
                 await MainActor.run {
@@ -725,6 +989,75 @@ struct ContentSheetView: View {
     private func exportToGoogleDocs() {
         // TODO: Implement Google Docs export
         debugLog("Export to Google Docs: \(title)", module: "ContentSheetView")
+    }
+}
+
+// MARK: - Event Picker Sheet for Recording
+
+private struct EventPickerSheetForRecording: View {
+    let recording: Recording
+    let events: [EASCalendarEvent]
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                // Кнопка "Отвязать" если есть связь
+                if recording.hasLinkedMeeting {
+                    Section {
+                        Button(role: .destructive) {
+                            recording.unlinkFromMeeting()
+                            dismiss()
+                        } label: {
+                            Label("Отвязать от встречи", systemImage: "link.badge.minus")
+                        }
+                    }
+                }
+
+                // Список событий
+                Section {
+                    ForEach(events) { event in
+                        Button {
+                            recording.linkToMeeting(event)
+                            dismiss()
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(event.subject)
+                                    .font(.headline)
+                                    .foregroundStyle(.primary)
+
+                                HStack(spacing: 12) {
+                                    Label(formattedTime(event), systemImage: "clock")
+
+                                    if !event.attendees.isEmpty {
+                                        Label("\(event.humanAttendees.count) участн.", systemImage: "person.2")
+                                    }
+                                }
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .navigationTitle("Выберите событие")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Отмена") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+
+    private func formattedTime(_ event: EASCalendarEvent) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter.string(from: event.startTime)
     }
 }
 

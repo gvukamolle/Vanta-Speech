@@ -5,9 +5,12 @@ struct EASCalendarSettingsView: View {
 
     @StateObject private var manager = EASCalendarManager.shared
 
-    // Login form state
-    @State private var serverURL = ""
-    @State private var username = ""
+    // Corporate EAS configuration (from Env)
+    private var corporateServerURL: String { Env.exchangeServerURL }
+    private var corporateDomain: String { Env.corporateEmailDomain }
+
+    // Login form state (only AD username and password needed)
+    @State private var adUsername = ""
     @State private var password = ""
 
     // UI state
@@ -25,7 +28,7 @@ struct EASCalendarSettingsView: View {
                 loginSection
             }
         }
-        .navigationTitle("Exchange Calendar")
+        .navigationTitle("Календарь")
         .scrollDismissesKeyboard(.interactively)
         .alert("Ошибка", isPresented: $showError) {
             Button("OK", role: .cancel) {}
@@ -42,15 +45,6 @@ struct EASCalendarSettingsView: View {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(.green)
                 Text("Подключено")
-            }
-
-            if let lastSync = manager.lastSyncDate {
-                HStack {
-                    Text("Последняя синхронизация")
-                    Spacer()
-                    Text(lastSync, style: .relative)
-                        .foregroundStyle(.secondary)
-                }
             }
         } header: {
             Text("Статус")
@@ -91,23 +85,6 @@ struct EASCalendarSettingsView: View {
 
     private var actionsSection: some View {
         Section {
-            Button {
-                Task {
-                    await manager.syncEvents()
-                }
-            } label: {
-                HStack {
-                    if manager.isSyncing {
-                        ProgressView()
-                            .controlSize(.small)
-                    } else {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    Text("Синхронизировать")
-                }
-            }
-            .disabled(manager.isSyncing)
-
             Button("Отключить", role: .destructive) {
                 manager.disconnect()
             }
@@ -118,13 +95,7 @@ struct EASCalendarSettingsView: View {
 
     private var loginSection: some View {
         Section {
-            TextField("Адрес сервера", text: $serverURL)
-                .textContentType(.URL)
-                .keyboardType(.URL)
-                .autocapitalization(.none)
-                .autocorrectionDisabled()
-
-            TextField("Имя пользователя", text: $username)
+            TextField("Логин", text: $adUsername)
                 .textContentType(.username)
                 .autocapitalization(.none)
                 .autocorrectionDisabled()
@@ -142,45 +113,35 @@ struct EASCalendarSettingsView: View {
                         ProgressView()
                             .controlSize(.small)
                     }
-                    Text("Подключить")
+                    Text("Подключить календарь")
                 }
                 .frame(maxWidth: .infinity)
             }
             .disabled(!canConnect || isConnecting)
 
         } header: {
-            Text("Подключение к Exchange")
+            Text("Корпоративный календарь")
         } footer: {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Введите адрес вашего Exchange сервера и учётные данные.")
-
-                Text("Формат имени пользователя: DOMAIN\\username или user@domain.com")
-                    .font(.caption)
-
-                Text("Пример сервера: https://mail.company.com")
-                    .font(.caption)
-            }
+            Text("Используйте учётные данные Active Directory")
+                .font(.caption)
         }
     }
 
     // MARK: - Actions
 
     private var canConnect: Bool {
-        !serverURL.isEmpty && !username.isEmpty && !password.isEmpty
+        !adUsername.isEmpty && !password.isEmpty
     }
 
     private func connect() async {
         isConnecting = true
 
-        // Normalize server URL
-        var normalizedURL = serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !normalizedURL.hasPrefix("http://") && !normalizedURL.hasPrefix("https://") {
-            normalizedURL = "https://" + normalizedURL
-        }
+        // Build full username: adUsername@pos-credit.ru
+        let fullUsername = adUsername.trimmingCharacters(in: .whitespacesAndNewlines) + corporateDomain
 
         let success = await manager.connect(
-            serverURL: normalizedURL,
-            username: username,
+            serverURL: corporateServerURL,
+            username: fullUsername,
             password: password
         )
 
@@ -191,12 +152,8 @@ struct EASCalendarSettingsView: View {
             showError = true
         } else {
             // Clear form
-            serverURL = ""
-            username = ""
+            adUsername = ""
             password = ""
-
-            // Start initial sync
-            await manager.syncEvents()
         }
     }
 }

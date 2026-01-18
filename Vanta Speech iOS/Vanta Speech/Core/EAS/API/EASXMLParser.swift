@@ -24,6 +24,11 @@ final class EASXMLParser: NSObject {
     private var currentAttendee: AttendeeBuilder?
     private var moreAvailable = false
 
+    // Delete command parsing
+    private var deletedEventIds: [String] = []
+    private var currentDeleteServerId: String?
+    private var inDelete = false
+
     // Namespace tracking
     private var inFolder = false
     private var inEvent = false
@@ -56,7 +61,12 @@ final class EASXMLParser: NSObject {
         parser?.delegate = self
         parser?.parse()
 
-        if let error = parser?.parserError {
+        // FIX: Break retain cycle to prevent memory leak
+        let parserError = parser?.parserError
+        parser?.delegate = nil
+        parser = nil
+
+        if let error = parserError {
             throw EASError.parseError(error.localizedDescription)
         }
 
@@ -80,13 +90,19 @@ final class EASXMLParser: NSObject {
         parser?.delegate = self
         parser?.parse()
 
-        if let error = parser?.parserError {
+        // FIX: Break retain cycle to prevent memory leak
+        let parserError = parser?.parserError
+        parser?.delegate = nil
+        parser = nil
+
+        if let error = parserError {
             throw EASError.parseError(error.localizedDescription)
         }
 
         return SyncResponse(
             syncKey: syncKey,
             events: events,
+            deletedEventIds: deletedEventIds,
             status: syncStatus,
             moreAvailable: moreAvailable
         )
@@ -109,7 +125,7 @@ extension EASXMLParser: XMLParserDelegate {
 
         // Debug: log element names related to attendees
         if elementName.lowercased().contains("attend") || elementName == "Email" || elementName == "Name" {
-            print("[EAS Parser] START element: \(elementName), inEvent=\(inEvent), inAttendee=\(inAttendee)")
+            debugLog("Parser: START element: \(elementName), inEvent=\(inEvent), inAttendee=\(inAttendee)", module: "EAS", level: .info)
         }
 
         switch elementName {
@@ -129,6 +145,10 @@ extension EASXMLParser: XMLParserDelegate {
         case "Attendee":
             currentAttendee = AttendeeBuilder()
             inAttendee = true
+        case "Delete":
+            if isSyncResponse {
+                inDelete = true
+            }
         case "Body":
             inBody = true
         case "Recurrence":
@@ -192,14 +212,17 @@ extension EASXMLParser: XMLParserDelegate {
                 currentEvent?.isAllDay = text == "1"
             case "OrganizerEmail":
                 currentEvent?.organizerEmail = text
-                print("[EAS Parser] Organizer email: \(text)")
+                debugLog("Parser: Organizer email: \(text)", module: "EAS", level: .info)
             case "OrganizerName":
                 currentEvent?.organizerName = text
-                print("[EAS Parser] Organizer name: \(text)")
+                debugLog("Parser: Organizer name: \(text)", module: "EAS", level: .info)
+            case "MeetingStatus":
+                currentEvent?.meetingStatus = Int(text)
+                debugLog("Parser: MeetingStatus: \(text)", module: "EAS", level: .info)
             case "Data":
                 if inBody {
                     currentEvent?.body = text
-                    print("[EAS Parser] Body data length: \(text.count)")
+                    debugLog("Parser: Body data length: \(text.count)", module: "EAS", level: .info)
                 }
             case "Body":
                 inBody = false
@@ -219,10 +242,10 @@ extension EASXMLParser: XMLParserDelegate {
             switch elementName {
             case "Email":
                 currentAttendee?.email = text
-                print("[EAS Parser] Attendee email set: \(text)")
+                debugLog("Parser: Attendee email set: \(text)", module: "EAS", level: .info)
             case "Name":
                 currentAttendee?.name = text
-                print("[EAS Parser] Attendee name set: \(text)")
+                debugLog("Parser: Attendee name set: \(text)", module: "EAS", level: .info)
             case "AttendeeType":
                 currentAttendee?.type = Int(text) ?? 1
             case "AttendeeStatus":
@@ -230,9 +253,9 @@ extension EASXMLParser: XMLParserDelegate {
             case "Attendee":
                 if let attendee = currentAttendee?.build() {
                     currentEvent?.attendees.append(attendee)
-                    print("[EAS Parser] ADDED attendee: \(attendee.name) <\(attendee.email)>")
+                    debugLog("Parser: ADDED attendee: \(attendee.name) <\(attendee.email)>", module: "EAS", level: .info)
                 } else {
-                    print("[EAS Parser] FAILED to build attendee: email=\(currentAttendee?.email ?? "nil"), name=\(currentAttendee?.name ?? "nil")")
+                    debugLog("Parser: FAILED to build attendee: email=\(currentAttendee?.email ?? "nil"), name=\(currentAttendee?.name ?? "nil")", module: "EAS", level: .warning)
                 }
                 currentAttendee = nil
                 inAttendee = false
@@ -263,10 +286,27 @@ extension EASXMLParser: XMLParserDelegate {
             case "Recurrence":
                 if let recurrence = currentRecurrence?.build() {
                     currentEvent?.recurrence = recurrence
-                    print("[EAS Parser] Recurrence: type=\(recurrence.type.rawValue), interval=\(recurrence.interval), dayOfWeek=\(recurrence.dayOfWeek ?? 0)")
+                    debugLog("Parser: Recurrence: type=\(recurrence.type.rawValue), interval=\(recurrence.interval), dayOfWeek=\(recurrence.dayOfWeek ?? 0)", module: "EAS", level: .info)
                 }
                 currentRecurrence = nil
                 inRecurrence = false
+            default:
+                break
+            }
+        }
+
+        // Handle delete command parsing
+        if inDelete {
+            switch elementName {
+            case "ServerId":
+                currentDeleteServerId = text
+            case "Delete":
+                if let serverId = currentDeleteServerId, !serverId.isEmpty {
+                    deletedEventIds.append(serverId)
+                    debugLog("Parser: Deleted event: \(serverId)", module: "EAS", level: .info)
+                }
+                currentDeleteServerId = nil
+                inDelete = false
             default:
                 break
             }
@@ -360,10 +400,11 @@ private class EventBuilder {
     var organizerEmail: String?
     var organizerName: String?
     var recurrence: EASRecurrence?
+    var meetingStatus: Int?
 
     func build() -> EASCalendarEvent? {
         guard !id.isEmpty, let start = startTime else {
-            print("[EAS Parser] Event build failed: id='\(id)', startTime=\(String(describing: startTime)), endTime=\(String(describing: endTime))")
+            debugLog("Parser: Event build failed: id='\(id)', startTime=\(String(describing: startTime)), endTime=\(String(describing: endTime))", module: "EAS", level: .error)
             return nil
         }
 
@@ -390,7 +431,10 @@ private class EventBuilder {
             )
         }
 
-        print("[EAS Parser] Built event: '\(subject)' from \(start) to \(end), organizer: \(organizer?.email ?? "none"), attendees: \(attendees.count), recurring: \(recurrence != nil)")
+        // Convert meetingStatus integer to enum
+        let status = meetingStatus.flatMap { EASMeetingStatus(rawValue: $0) }
+
+        debugLog("Parser: Built event: '\(subject)' from \(start) to \(end), organizer: \(organizer?.email ?? "none"), attendees: \(attendees.count), recurring: \(recurrence != nil), meetingStatus: \(meetingStatus ?? -1)", module: "EAS", level: .info)
 
         return EASCalendarEvent(
             id: id,
@@ -402,7 +446,8 @@ private class EventBuilder {
             organizer: organizer,
             attendees: attendees,
             isAllDay: isAllDay,
-            recurrence: recurrence
+            recurrence: recurrence,
+            meetingStatus: status
         )
     }
 }

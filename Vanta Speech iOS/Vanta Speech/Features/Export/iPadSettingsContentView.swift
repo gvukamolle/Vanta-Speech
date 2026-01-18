@@ -10,17 +10,16 @@ struct iPadSettingsContentView: View {
     @AppStorage("appTheme") private var appTheme = AppTheme.system.rawValue
     @AppStorage("defaultRecordingMode") private var defaultRecordingMode = "standard"
     @AppStorage("confluence_connected") private var confluenceConnected = false
-    @AppStorage("notion_connected") private var notionConnected = false
-    @AppStorage("googledocs_connected") private var googleDocsConnected = false
 
     @StateObject private var presetSettings = PresetSettings.shared
     @StateObject private var authManager = AuthenticationManager.shared
+    @StateObject private var calendarManager = EASCalendarManager.shared
 
     enum SettingItem: String, CaseIterable, Identifiable {
         case account = "Аккаунт"
         case presets = "Типы встреч"
         case theme = "Оформление"
-        case transcription = "Транскрипция"
+        case transcription = "Расшифровка"
         case integrations = "Интеграции"
         case about = "О приложении"
         case danger = "Данные"
@@ -96,6 +95,11 @@ struct iPadSettingsContentView: View {
                 }
             }
             .padding()
+        }
+        .refreshable {
+            if calendarManager.isConnected {
+                await calendarManager.forceFullSync()
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -237,10 +241,10 @@ struct iPadSettingsContentView: View {
 
     private var transcriptionSection: some View {
         VStack(alignment: .leading, spacing: 24) {
-            sectionHeader("Транскрипция")
+            sectionHeader("Расшифровка")
 
             VStack(alignment: .leading, spacing: 16) {
-                Toggle("Авто-транскрипция после записи", isOn: $autoTranscribe)
+                Toggle("Авто-расшифровка после записи", isOn: $autoTranscribe)
 
                 Divider()
 
@@ -270,33 +274,31 @@ struct iPadSettingsContentView: View {
                 .foregroundStyle(.secondary)
 
             VStack(spacing: 12) {
-                // Outlook Calendar
+                // Exchange Calendar (EAS)
                 NavigationLink {
-                    OutlookCalendarSettingsView()
+                    EASCalendarSettingsView()
                 } label: {
-                    outlookIntegrationRow
+                    exchangeIntegrationRow
                 }
 
                 integrationRow(name: "Confluence", icon: "doc.text", isConnected: $confluenceConnected)
-                integrationRow(name: "Notion", icon: "doc.richtext", isConnected: $notionConnected)
-                integrationRow(name: "Google Docs", icon: "doc.text.fill", isConnected: $googleDocsConnected)
             }
 
             Spacer()
         }
     }
 
-    private var outlookIntegrationRow: some View {
+    private var exchangeIntegrationRow: some View {
         HStack(spacing: 12) {
-            Image(systemName: "calendar")
+            Image(systemName: "building.2")
                 .foregroundStyle(.secondary)
                 .frame(width: 24)
 
-            Text("Outlook Calendar")
+            Text("Календарь")
 
             Spacer()
 
-            if OutlookCalendarManager.shared.isConnected {
+            if calendarManager.isConnected {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(.green)
             }

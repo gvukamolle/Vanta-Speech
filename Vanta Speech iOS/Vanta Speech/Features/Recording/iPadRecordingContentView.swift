@@ -12,6 +12,7 @@ struct iPadRecordingContentView: View {
 
     @Query(sort: \Recording.createdAt, order: .reverse) private var allRecordings: [Recording]
     @StateObject private var presetSettings = PresetSettings.shared
+    @StateObject private var calendarManager = EASCalendarManager.shared
 
     @State private var showRecordingSheet = false
     @State private var showRealtimeRecordingSheet = false
@@ -308,6 +309,11 @@ struct iPadRecordingContentView: View {
                 }
             }
             .padding()
+        }
+        .refreshable {
+            if calendarManager.isConnected {
+                await calendarManager.forceFullSync()
+            }
         }
     }
 

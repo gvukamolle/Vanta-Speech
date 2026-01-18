@@ -5,31 +5,58 @@ import Combine
 struct UpcomingMeetingsSection: View {
     @StateObject private var calendarManager = EASCalendarManager.shared
 
-    /// Filter to show only meetings happening soon (within 2 hours) or currently ongoing
+    /// Filter to show only today's meetings
     private var relevantMeetings: [EASCalendarEvent] {
         let now = Date()
-        let twoHoursFromNow = Calendar.current.date(byAdding: .hour, value: 2, to: now) ?? now
-        let oneHourAgo = Calendar.current.date(byAdding: .hour, value: -1, to: now) ?? now
+        let calendar = Calendar.current
+
+        // Start of today (00:00)
+        let startOfDay = calendar.startOfDay(for: now)
+
+        // End of today (23:59:59)
+        let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)?.addingTimeInterval(-1) ?? now
 
         return calendarManager.cachedEvents
             .filter { event in
                 // Show events that:
-                // 1. Start within next 2 hours, OR
-                // 2. Are currently ongoing (started up to 1 hour ago and not yet ended)
-                let startsInFuture = event.startTime >= now && event.startTime <= twoHoursFromNow
-                let isOngoing = event.startTime >= oneHourAgo && event.endTime > now
-                return startsInFuture || isOngoing
+                // 1. Are currently ongoing (already started AND not yet ended)
+                let isOngoing = event.startTime <= now && event.endTime > now
+
+                // 2. Start today (between 00:00 and 23:59:59)
+                let isToday = event.startTime >= startOfDay && event.startTime <= endOfDay
+
+                return isOngoing || isToday
             }
             .sorted { $0.startTime < $1.startTime }
-            .prefix(3)
-            .map { $0 }
     }
 
     var body: some View {
         Group {
-            if calendarManager.isConnected && !relevantMeetings.isEmpty {
-                meetingsSection
+            if calendarManager.isConnected {
+                if relevantMeetings.isEmpty {
+                    emptyStateView
+                } else {
+                    meetingsSection
+                }
             }
+        }
+    }
+
+    private var emptyStateView: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Image(systemName: "calendar")
+                    .foregroundStyle(.secondary)
+                Text("Встречи")
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 4)
+
+            Text("На сегодня встреч нет")
+                .font(.subheadline)
+                .foregroundStyle(.tertiary)
+                .padding(.vertical, 8)
         }
     }
 
@@ -38,7 +65,7 @@ struct UpcomingMeetingsSection: View {
             HStack {
                 Image(systemName: "calendar")
                     .foregroundStyle(.blue)
-                Text("Ближайшие встречи")
+                Text("Встречи сегодня")
                     .font(.headline)
                     .foregroundStyle(.secondary)
 
@@ -70,6 +97,12 @@ private struct MeetingCard: View {
         return event.startTime <= now && event.endTime > now
     }
 
+    private var formattedStartTime: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter.string(from: event.startTime)
+    }
+
     private var timeUntilStart: String {
         let now = Date()
         if isOngoing {
@@ -80,16 +113,16 @@ private struct MeetingCard: View {
         let minutes = Int(interval / 60)
 
         if minutes < 1 {
-            return "Начинается"
+            return "\(formattedStartTime) — начинается"
         } else if minutes < 60 {
-            return "Через \(minutes) мин"
+            return "\(formattedStartTime) (через \(minutes) мин)"
         } else {
             let hours = minutes / 60
             let remainingMinutes = minutes % 60
             if remainingMinutes == 0 {
-                return "Через \(hours) ч"
+                return "\(formattedStartTime) (через \(hours) ч)"
             }
-            return "Через \(hours) ч \(remainingMinutes) мин"
+            return "\(formattedStartTime) (через \(hours) ч \(remainingMinutes) мин)"
         }
     }
 
@@ -232,15 +265,19 @@ struct MeetingDetailSheet: View {
             List {
                 // Basic info
                 Section {
-                    LabeledContent("Название", value: event.subject)
+                    // Название встречи жирным без label
+                    Text(event.subject)
+                        .font(.headline)
+                        .fontWeight(.bold)
 
-                    LabeledContent("Начало") {
-                        Text(event.startTime, style: .date)
-                        Text(event.startTime, style: .time)
+                    // Дата в русском формате
+                    LabeledContent("Дата") {
+                        Text(formattedRussianDate(event.startTime))
                     }
 
-                    LabeledContent("Окончание") {
-                        Text(event.endTime, style: .time)
+                    // Время как промежуток
+                    LabeledContent("Время") {
+                        Text(formattedTimeRange())
                     }
 
                     LabeledContent("Длительность", value: event.formattedDuration)
@@ -270,13 +307,15 @@ struct MeetingDetailSheet: View {
                 // Attendees
                 if !event.humanAttendees.isEmpty {
                     Section("Участники (\(event.humanAttendees.count))") {
-                        ForEach(event.humanAttendees, id: \.email) { attendee in
+                        ForEach(Array(event.humanAttendees.enumerated()), id: \.offset) { _, attendee in
                             Label {
                                 VStack(alignment: .leading) {
                                     Text(attendee.name)
-                                    Text(attendee.email)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
+                                    if !attendee.email.isEmpty {
+                                        Text(attendee.email)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
                                 }
                             } icon: {
                                 Image(systemName: attendee.type == .optional ? "person.badge.minus" : "person.fill")
@@ -305,28 +344,61 @@ struct MeetingDetailSheet: View {
             }
         }
     }
+
+    // MARK: - Formatting Helpers
+
+    private func formattedRussianDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ru_RU")
+        formatter.dateFormat = "EEE. d MMMM yyyy"
+        let result = formatter.string(from: date)
+        // Capitalize first letter
+        return result.prefix(1).uppercased() + result.dropFirst()
+    }
+
+    private func formattedTimeRange() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        let start = formatter.string(from: event.startTime)
+        let end = formatter.string(from: event.endTime)
+        return "\(start) - \(end)"
+    }
 }
 
 // MARK: - String Extension for HTML
 
 private extension String {
-    /// Strip HTML tags from string
+    /// Strip HTML tags from string (safe implementation without NSAttributedString)
     var htmlStripped: String {
-        guard let data = self.data(using: .utf8) else { return self }
+        // Simple regex strip - safer and faster than NSAttributedString
+        var result = self
+            .replacingOccurrences(of: "<br\\s*/?>", with: "\n", options: .regularExpression)
+            .replacingOccurrences(of: "</p>", with: "\n\n", options: .caseInsensitive)
+            .replacingOccurrences(of: "</div>", with: "\n", options: .caseInsensitive)
+            .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
 
-        if let attributedString = try? NSAttributedString(
-            data: data,
-            options: [
-                .documentType: NSAttributedString.DocumentType.html,
-                .characterEncoding: String.Encoding.utf8.rawValue
-            ],
-            documentAttributes: nil
-        ) {
-            return attributedString.string
+        // Decode common HTML entities
+        let entities: [(String, String)] = [
+            ("&nbsp;", " "),
+            ("&amp;", "&"),
+            ("&lt;", "<"),
+            ("&gt;", ">"),
+            ("&quot;", "\""),
+            ("&#39;", "'"),
+            ("&ndash;", "–"),
+            ("&mdash;", "—"),
+        ]
+
+        for (entity, char) in entities {
+            result = result.replacingOccurrences(of: entity, with: char)
         }
 
-        // Fallback: simple regex strip
-        return self.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+        // Clean up multiple newlines
+        while result.contains("\n\n\n") {
+            result = result.replacingOccurrences(of: "\n\n\n", with: "\n\n")
+        }
+
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 

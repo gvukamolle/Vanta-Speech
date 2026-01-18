@@ -10,8 +10,7 @@ final class KeychainManager {
     private let easCredentialsKey = "eas_credentials"
     private let easDeviceIdKey = "eas_device_id"
     private let easSyncStateKey = "eas_sync_state"
-    private let googleRefreshTokenKey = "google_refresh_token"
-    private let googleUserInfoKey = "google_user_info"
+    private let easCachedEventsKey = "eas_cached_events"
 
     private init() {}
 
@@ -107,68 +106,31 @@ final class KeychainManager {
         delete(forKey: easSyncStateKey)
     }
 
-    /// Clear all EAS data (credentials, device ID, sync state)
+    // MARK: - EAS Cached Events
+
+    /// Save EAS cached events
+    func saveEASCachedEvents(_ events: [EASCalendarEvent]) throws {
+        let data = try JSONEncoder().encode(events)
+        try save(data: data, forKey: easCachedEventsKey)
+    }
+
+    /// Load EAS cached events
+    func loadEASCachedEvents() -> [EASCalendarEvent]? {
+        guard let data = load(forKey: easCachedEventsKey) else { return nil }
+        return try? JSONDecoder().decode([EASCalendarEvent].self, from: data)
+    }
+
+    /// Delete EAS cached events
+    func deleteEASCachedEvents() {
+        delete(forKey: easCachedEventsKey)
+    }
+
+    /// Clear all EAS data (credentials, device ID, sync state, cached events)
     func clearAllEASData() {
         delete(forKey: easCredentialsKey)
         delete(forKey: easDeviceIdKey)
         delete(forKey: easSyncStateKey)
-    }
-
-    // MARK: - Google OAuth Storage
-
-    /// Save Google refresh token
-    func saveGoogleRefreshToken(_ token: String) throws {
-        guard let data = token.data(using: .utf8) else {
-            throw KeychainError.encodingFailed
-        }
-        try save(data: data, forKey: googleRefreshTokenKey)
-    }
-
-    /// Load Google refresh token
-    func loadGoogleRefreshToken() -> String? {
-        guard let data = load(forKey: googleRefreshTokenKey) else { return nil }
-        return String(data: data, encoding: .utf8)
-    }
-
-    /// Delete Google refresh token
-    func deleteGoogleRefreshToken() {
-        delete(forKey: googleRefreshTokenKey)
-    }
-
-    /// Save Google user info (email, name)
-    func saveGoogleUserInfo(_ info: GoogleUserInfo) throws {
-        let dict: [String: String?] = [
-            "email": info.email,
-            "displayName": info.displayName,
-            "profileImageURL": info.profileImageURL?.absoluteString
-        ]
-        let data = try JSONEncoder().encode(dict)
-        try save(data: data, forKey: googleUserInfoKey)
-    }
-
-    /// Load Google user info
-    func loadGoogleUserInfo() -> GoogleUserInfo? {
-        guard let data = load(forKey: googleUserInfoKey),
-              let dict = try? JSONDecoder().decode([String: String?].self, from: data),
-              let email = dict["email"] ?? nil else {
-            return nil
-        }
-        return GoogleUserInfo(
-            email: email,
-            displayName: dict["displayName"] ?? nil,
-            profileImageURL: (dict["profileImageURL"] ?? nil).flatMap { URL(string: $0) }
-        )
-    }
-
-    /// Delete all Google credentials
-    func deleteGoogleCredentials() {
-        delete(forKey: googleRefreshTokenKey)
-        delete(forKey: googleUserInfoKey)
-    }
-
-    /// Check if Google credentials are stored
-    var hasGoogleCredentials: Bool {
-        loadGoogleRefreshToken() != nil
+        delete(forKey: easCachedEventsKey)
     }
 
     // MARK: - Generic Keychain Operations

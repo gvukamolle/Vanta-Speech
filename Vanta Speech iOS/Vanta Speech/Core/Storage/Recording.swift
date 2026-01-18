@@ -29,6 +29,14 @@ final class Recording {
     /// Organizer email for the linked meeting
     var linkedMeetingOrganizerEmail: String?
 
+    // MARK: - Summary Email Tracking
+
+    /// When the summary was sent to participants
+    var summarySentAt: Date?
+
+    /// JSON-encoded array of emails the summary was sent to
+    var summarySentToEmails: String?
+
     /// Whether this recording has a linked calendar meeting
     var hasLinkedMeeting: Bool {
         linkedMeetingId != nil
@@ -106,9 +114,6 @@ extension Recording {
         linkedMeetingSubject = event.subject
         linkedMeetingAttendeeEmails = event.attendeeEmails
         linkedMeetingOrganizerEmail = event.organizer?.email
-
-        // Update title to match meeting subject
-        title = event.subject
     }
 
     /// Unlink from calendar meeting
