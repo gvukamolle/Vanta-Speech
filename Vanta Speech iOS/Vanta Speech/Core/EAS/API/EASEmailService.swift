@@ -13,8 +13,6 @@ final class EASEmailService {
 
     private var isNetworkAvailable = true
 
-    /// Use plain XML instead of WBXML (most servers require WBXML)
-    var usePlainXML = false
 
     // MARK: - Errors
 
@@ -79,13 +77,15 @@ final class EASEmailService {
     /// - Parameters:
     ///   - to: Array of recipient email addresses
     ///   - subject: Email subject
-    ///   - body: Email body (plain text)
+    ///   - body: Email body (plain text or HTML)
+    ///   - isHTML: Whether body is HTML content (default: false)
     ///   - from: Sender email address (optional, uses username if not provided)
     /// - Returns: True if email was sent successfully
     func sendEmail(
         to recipients: [String],
         subject: String,
         body: String,
+        isHTML: Bool = false,
         from: String? = nil
     ) async throws -> Bool {
         guard !recipients.isEmpty else {
@@ -104,22 +104,37 @@ final class EASEmailService {
             to: recipients,
             from: senderEmail,
             subject: subject,
-            body: body
+            body: body,
+            isHTML: isHTML
         )
 
-        // Build SendMail XML request
-        let xmlBody = buildSendMailXML(mimeMessage: mimeMessage)
+        debugLog("Sending email from: \(senderEmail) to: \(recipients)", module: "EASEmail", level: .info)
+        debugLog("Subject: \(subject)", module: "EASEmail", level: .info)
+        debugLog("Body length: \(body.count) chars", module: "EASEmail", level: .info)
 
-        // Build and execute request
-        let request = try buildSendMailRequest(credentials: credentials, body: xmlBody)
+        // Build and execute request (raw MIME for protocol 12.1)
+        let request = try buildSendMailRequest(credentials: credentials, mimeMessage: mimeMessage)
+        debugLog("SendMail request URL: \(request.url?.absoluteString ?? "nil")", module: "EASEmail", level: .info)
         let (data, response) = try await executeRequest(request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw EmailError.networkError("Invalid response")
         }
 
+        debugLog("SendMail response: HTTP \(httpResponse.statusCode), body size: \(data.count) bytes", module: "EASEmail", level: .info)
+
+        // Log response body for debugging
+        if !data.isEmpty {
+            if let responseText = String(data: data, encoding: .utf8) {
+                debugLog("SendMail response body: \(responseText.prefix(500))", module: "EASEmail", level: .info)
+            } else {
+                debugLog("SendMail response body (hex): \(data.prefix(100).map { String(format: "%02X", $0) }.joined())", module: "EASEmail", level: .info)
+            }
+        }
+
         // SendMail returns empty body on success (HTTP 200)
         if httpResponse.statusCode == 200 {
+            debugLog("SendMail succeeded (HTTP 200)", module: "EASEmail", level: .info)
             return true
         }
 
@@ -137,37 +152,38 @@ final class EASEmailService {
         return credentials
     }
 
-    private func buildSendMailRequest(credentials: EASCredentials, body: String) throws -> URLRequest {
-        guard let url = credentials.buildURL(command: "SendMail") else {
+    private func buildSendMailRequest(credentials: EASCredentials, mimeMessage: String) throws -> URLRequest {
+        // Add SaveInSent=T to URL to save in Sent Items
+        guard var urlComponents = URLComponents(string: credentials.serverURL) else {
+            throw EmailError.invalidServerURL
+        }
+        urlComponents.path = "/Microsoft-Server-ActiveSync"
+        urlComponents.queryItems = [
+            URLQueryItem(name: "Cmd", value: "SendMail"),
+            URLQueryItem(name: "User", value: credentials.username),
+            URLQueryItem(name: "DeviceId", value: credentials.deviceId),
+            URLQueryItem(name: "DeviceType", value: "VantaSpeech"),
+            URLQueryItem(name: "SaveInSent", value: "T")  // Save to Sent Items
+        ]
+
+        guard let url = urlComponents.url else {
             throw EmailError.invalidServerURL
         }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue(credentials.basicAuthHeader, forHTTPHeaderField: "Authorization")
-        request.setValue(EASCredentials.protocolVersion, forHTTPHeaderField: "MS-ASProtocolVersion")
+        // Use protocol version 12.1 which accepts raw MIME
+        request.setValue("12.1", forHTTPHeaderField: "MS-ASProtocolVersion")
         request.setValue("VantaSpeech/1.0", forHTTPHeaderField: "User-Agent")
 
         // Get policy key from sync state if available
         let policyKey = keychainManager.loadEASSyncState()?.policyKey ?? "0"
         request.setValue(policyKey, forHTTPHeaderField: "X-MS-PolicyKey")
 
-        // Use plain XML for testing, WBXML for production
-        if usePlainXML {
-            request.setValue("text/xml", forHTTPHeaderField: "Content-Type")
-            request.setValue("text/xml", forHTTPHeaderField: "Accept")
-            request.httpBody = body.data(using: .utf8)
-        } else {
-            request.setValue("application/vnd.ms-sync.wbxml", forHTTPHeaderField: "Content-Type")
-            request.setValue("application/vnd.ms-sync.wbxml", forHTTPHeaderField: "Accept")
-            // Encode XML to WBXML
-            let encoder = WBXMLEncoder()
-            do {
-                request.httpBody = try encoder.encode(body)
-            } catch {
-                throw EmailError.sendFailed("Ошибка кодирования WBXML: \(error.localizedDescription)")
-            }
-        }
+        // For protocol 12.1: send raw MIME with Content-Type: message/rfc822
+        request.setValue("message/rfc822", forHTTPHeaderField: "Content-Type")
+        request.httpBody = mimeMessage.data(using: .utf8)
 
         return request
     }
@@ -208,7 +224,8 @@ final class EASEmailService {
         to recipients: [String],
         from: String,
         subject: String,
-        body: String
+        body: String,
+        isHTML: Bool = false
     ) -> String {
         let messageId = "<\(UUID().uuidString)@vantaspeech.local>"
         let dateFormatter = DateFormatter()
@@ -222,19 +239,23 @@ final class EASEmailService {
         // Build recipients string
         let toHeader = recipients.joined(separator: ", ")
 
-        // Build MIME message (RFC 5322)
-        let mime = """
-        From: \(from)
-        To: \(toHeader)
-        Subject: \(encodedSubject)
-        Date: \(date)
-        Message-ID: \(messageId)
-        MIME-Version: 1.0
-        Content-Type: text/plain; charset=UTF-8
-        Content-Transfer-Encoding: 8bit
+        // Content type based on body format
+        let contentType = isHTML
+            ? "text/html; charset=UTF-8"
+            : "text/plain; charset=UTF-8"
 
-        \(body)
-        """
+        // Build MIME message (RFC 5322)
+        // IMPORTANT: No leading whitespace! MIME headers must start at column 0
+        var mime = "From: \(from)\r\n"
+        mime += "To: \(toHeader)\r\n"
+        mime += "Subject: \(encodedSubject)\r\n"
+        mime += "Date: \(date)\r\n"
+        mime += "Message-ID: \(messageId)\r\n"
+        mime += "MIME-Version: 1.0\r\n"
+        mime += "Content-Type: \(contentType)\r\n"
+        mime += "Content-Transfer-Encoding: 8bit\r\n"
+        mime += "\r\n"  // Empty line separates headers from body
+        mime += body
 
         return mime
     }
@@ -257,18 +278,4 @@ final class EASEmailService {
         return value
     }
 
-    // MARK: - EAS XML Building
-
-    private func buildSendMailXML(mimeMessage: String) -> String {
-        // Base64 encode the MIME message
-        let mimeBase64 = Data(mimeMessage.utf8).base64EncodedString()
-
-        return """
-        <?xml version="1.0" encoding="utf-8"?>
-        <SendMail xmlns="ComposeMail">
-            <SaveInSentItems/>
-            <Mime>\(mimeBase64)</Mime>
-        </SendMail>
-        """
-    }
 }

@@ -84,9 +84,15 @@ struct EASCalendarEvent: Codable, Equatable, Identifiable {
         attendees.filter { $0.type != .resource }
     }
 
-    /// Email list for all human attendees
+    /// Email list for all human attendees (including organizer if present)
     var attendeeEmails: [String] {
-        humanAttendees.map { $0.email }
+        var emails = humanAttendees.map { $0.email }
+        // Include organizer if not already in the list
+        if let organizerEmail = organizer?.email,
+           !emails.contains(where: { $0.lowercased() == organizerEmail.lowercased() }) {
+            emails.append(organizerEmail)
+        }
+        return emails
     }
 
     // MARK: - Initialization

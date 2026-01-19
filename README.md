@@ -6,8 +6,9 @@ iOS приложение для записи, транскрипции и сам
 
 - **Audio Recording** - Локальная запись аудио встреч с поддержкой фоновой записи
 - **Transcription** - Отправка на сервер для распознавания речи (AI-powered)
-- **Summarization** - Автоматическое создание саммари встречи
+- **Summarization** - Автоматическое создание саммари встречи с поддержкой разных пресетов
 - **Calendar Integration** - Синхронизация с Exchange календарём (EAS), автоматическая привязка записей к встречам
+- **Email Summary** - Отправка HTML-саммари участникам встречи через Exchange
 - **Playback** - Воспроизведение записей с удобным плеером
 - **Library** - Управление записями с поиском и фильтрацией
 - **Export** - Интеграция с Confluence (planned)
@@ -41,7 +42,7 @@ VantaSpeech/
 - **AVFoundation** - Audio recording & playback
 - **FFmpegKit** - OGG/Opus conversion
 - **URLSession** - Async networking
-- **Exchange ActiveSync** - Calendar sync (WBXML protocol)
+- **Exchange ActiveSync** - Calendar sync & email (WBXML protocol, SendMail command)
 
 ## Configuration
 
@@ -83,6 +84,20 @@ Response:
 Требуется:
 - URL сервера Exchange (например: `https://mail.company.com/Microsoft-Server-ActiveSync`)
 - Корпоративный логин и пароль
+
+### Email Summary
+
+После подключения календаря доступна отправка саммари участникам встречи:
+
+1. Привяжите запись к событию календаря
+2. Получите транскрипцию и саммари
+3. Нажмите "Отправить саммари" в карточке записи
+
+**Возможности:**
+- Красивый HTML-шаблон с метаданными встречи
+- Markdown → HTML парсер (заголовки, списки, чеклисты, таблицы)
+- Автоматическое форматирование имён участников (Фамилия И.О.)
+- Настройка "Отправлять копию себе"
 
 ## Permissions
 

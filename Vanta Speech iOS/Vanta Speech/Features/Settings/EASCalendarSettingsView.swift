@@ -4,6 +4,7 @@ import SwiftUI
 struct EASCalendarSettingsView: View {
 
     @StateObject private var manager = EASCalendarManager.shared
+    @StateObject private var summaryEmailManager = SummaryEmailManager.shared
 
     // Corporate EAS configuration (from Env)
     private var corporateServerURL: String { Env.exchangeServerURL }
@@ -23,6 +24,7 @@ struct EASCalendarSettingsView: View {
             if manager.isConnected {
                 connectedSection
                 eventsSection
+                emailSettingsSection
                 actionsSection
             } else {
                 loginSection
@@ -80,6 +82,16 @@ struct EASCalendarSettingsView: View {
                 Text("Будущих событий: \(manager.upcomingEvents.count), прошедших: \(manager.cachedEvents.count - manager.upcomingEvents.count)")
                     .font(.caption)
             }
+        }
+    }
+
+    private var emailSettingsSection: some View {
+        Section {
+            Toggle("Отправлять копию себе", isOn: $summaryEmailManager.includeSelfInSummaryEmail)
+        } header: {
+            Text("Саммари по email")
+        } footer: {
+            Text("При отправке саммари участникам встречи вы также получите копию письма")
         }
     }
 

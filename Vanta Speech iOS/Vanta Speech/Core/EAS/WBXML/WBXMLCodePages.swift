@@ -266,6 +266,24 @@ let provisionTags: [UInt8: String] = [
     0x39: "Hash",
 ]
 
+/// ComposeMail namespace (Code Page 21) - for SendMail, SmartForward, SmartReply
+let composeMailTags: [UInt8: String] = [
+    0x05: "SendMail",
+    0x06: "SmartForward",
+    0x07: "SmartReply",
+    0x08: "SaveInSentItems",
+    0x09: "ReplaceMime",
+    0x0B: "Source",
+    0x0C: "FolderId",
+    0x0D: "ItemId",
+    0x0E: "LongId",
+    0x0F: "InstanceId",
+    0x10: "Mime",
+    0x11: "ClientId",
+    0x12: "Status",
+    0x13: "AccountId",
+]
+
 /// Settings namespace (Code Page 18)
 let settingsTags: [UInt8: String] = [
     0x05: "Settings",
@@ -327,6 +345,8 @@ func getTagName(codePage: UInt8, tag: UInt8) -> String {
         return provisionTags[tagValue] ?? "Unknown_\(codePage)_\(tagValue)"
     case EASCodePage.settings.rawValue:
         return settingsTags[tagValue] ?? "Unknown_\(codePage)_\(tagValue)"
+    case EASCodePage.composeEmail.rawValue:
+        return composeMailTags[tagValue] ?? "Unknown_\(codePage)_\(tagValue)"
     default:
         return "Unknown_\(codePage)_\(tagValue)"
     }

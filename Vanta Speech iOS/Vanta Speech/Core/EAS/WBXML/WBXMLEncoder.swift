@@ -15,7 +15,10 @@ final class WBXMLEncoder {
         "Sync": EASCodePage.airSync.rawValue,
         "FolderSync": EASCodePage.folderHierarchy.rawValue,
         "Provision": EASCodePage.provision.rawValue,
-        "Settings": EASCodePage.settings.rawValue
+        "Settings": EASCodePage.settings.rawValue,
+        "SendMail": EASCodePage.composeEmail.rawValue,
+        "SmartForward": EASCodePage.composeEmail.rawValue,
+        "SmartReply": EASCodePage.composeEmail.rawValue
     ]
 
     /// Elements that switch namespace context
@@ -213,6 +216,7 @@ final class WBXMLEncoder {
 
         // Then search all namespaces in priority order
         let searchOrder: [(UInt8, [UInt8: String])] = [
+            (EASCodePage.composeEmail.rawValue, composeMailTags),
             (EASCodePage.provision.rawValue, provisionTags),
             (EASCodePage.settings.rawValue, settingsTags),
             (EASCodePage.folderHierarchy.rawValue, folderHierarchyTags),
@@ -245,6 +249,8 @@ final class WBXMLEncoder {
             tags = provisionTags
         case EASCodePage.settings.rawValue:
             tags = settingsTags
+        case EASCodePage.composeEmail.rawValue:
+            tags = composeMailTags
         default:
             return nil
         }

@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import SwiftUI
 
@@ -5,6 +6,11 @@ import SwiftUI
 @MainActor
 final class SummaryEmailManager: ObservableObject {
     static let shared = SummaryEmailManager()
+
+    // MARK: - Settings
+
+    /// Include current user in summary email recipients (default: true)
+    @AppStorage("summary_email_include_self") var includeSelfInSummaryEmail = true
 
     // MARK: - Published State
 
@@ -38,14 +44,34 @@ final class SummaryEmailManager: ObservableObject {
             return false
         }
 
-        let attendees = recording.linkedMeetingAttendeeEmails
+        // Get current user email first
+        let currentUserEmail = getCurrentUserEmail()
+
+        // Get attendees from live event first (more up-to-date than stored)
+        var attendees = getAttendeesFromLiveEvent(meetingId: recording.linkedMeetingId)
+
+        // Fallback to stored attendees if live event not found
+        if attendees.isEmpty {
+            attendees = recording.linkedMeetingAttendeeEmails
+            debugLog("Using stored attendees: \(attendees.count)", module: "SummaryEmail", level: .info)
+        } else {
+            debugLog("Using live event attendees: \(attendees.count)", module: "SummaryEmail", level: .info)
+            // Update stored attendees for consistency
+            recording.linkedMeetingAttendeeEmails = attendees
+        }
+
+        // Final fallback to current user if empty and includeSelf is enabled
+        if attendees.isEmpty, includeSelfInSummaryEmail, let selfEmail = currentUserEmail {
+            attendees = [selfEmail]
+            debugLog("No attendees found, using current user as recipient", module: "SummaryEmail", level: .info)
+        }
+
         guard !attendees.isEmpty else {
-            debugLog("Cannot send summary: no attendees", module: "SummaryEmail", level: .warning)
+            debugLog("Cannot send summary: no attendees and includeSelf is disabled", module: "SummaryEmail", level: .warning)
             return false
         }
 
-        // Filter out current user from recipients
-        let currentUserEmail = getCurrentUserEmail()
+        // Filter recipients based on settings
         let recipients = filterRecipients(attendees: attendees, currentUserEmail: currentUserEmail)
 
         guard !recipients.isEmpty else {
@@ -53,10 +79,20 @@ final class SummaryEmailManager: ObservableObject {
             return false
         }
 
-        // Build email
-        let meetingSubject = recording.linkedMeetingSubject ?? "Встреча"
+        // Get live event for additional details
+        let liveEvent = getLiveEvent(meetingId: recording.linkedMeetingId)
+
+        // Build email - use live event subject (most up-to-date) or fall back to stored
+        let meetingSubject = liveEvent?.subject ?? recording.linkedMeetingSubject ?? "Встреча"
         let subject = "Саммари: \(meetingSubject)"
-        let body = formatSummaryAsPlainText(summary: summary, meetingSubject: meetingSubject)
+
+        // Build HTML email using template
+        let emailHTML = buildEmailHTML(
+            recording: recording,
+            summary: summary,
+            event: liveEvent,
+            attendeeNames: getAttendeeNames(from: liveEvent, fallbackEmails: attendees)
+        )
 
         isSending = true
         lastError = nil
@@ -65,7 +101,9 @@ final class SummaryEmailManager: ObservableObject {
             let success = try await emailService.sendEmail(
                 to: recipients,
                 subject: subject,
-                body: body
+                body: emailHTML,
+                isHTML: true,
+                from: currentUserEmail  // Use proper email format, not DOMAIN\user
             )
 
             if success {
@@ -106,6 +144,32 @@ final class SummaryEmailManager: ObservableObject {
 
     // MARK: - Private Helpers
 
+    /// Get attendees from live event in EASCalendarManager cache
+    /// - Parameter meetingId: The meeting ID to look up
+    /// - Returns: Array of attendee emails, or empty if event not found
+    private func getAttendeesFromLiveEvent(meetingId: String?) -> [String] {
+        guard let meetingId = meetingId else { return [] }
+
+        // Search in cached events
+        let calendarManager = EASCalendarManager.shared
+
+        // First try exact match
+        if let event = calendarManager.cachedEvents.first(where: { $0.id == meetingId }) {
+            debugLog("Found live event by exact ID: \(event.subject)", module: "SummaryEmail", level: .info)
+            return event.attendeeEmails
+        }
+
+        // Try matching by ID prefix (for recurring event instances like "id_0", "id_1")
+        let baseId = meetingId.components(separatedBy: "_").first ?? meetingId
+        if let event = calendarManager.cachedEvents.first(where: { $0.id.hasPrefix(baseId) }) {
+            debugLog("Found live event by base ID: \(event.subject)", module: "SummaryEmail", level: .info)
+            return event.attendeeEmails
+        }
+
+        debugLog("Live event not found for ID: \(meetingId)", module: "SummaryEmail", level: .info)
+        return []
+    }
+
     /// Get current user's email from EAS credentials
     private func getCurrentUserEmail() -> String? {
         guard let credentials = keychainManager.loadEASCredentials() else {
@@ -125,8 +189,16 @@ final class SummaryEmailManager: ObservableObject {
         return (cleanUsername + Env.corporateEmailDomain).lowercased()
     }
 
-    /// Filter recipients, removing current user and organizer if it's the same as current user
+    /// Filter recipients based on settings
+    /// - If includeSelfInSummaryEmail is true, returns all attendees
+    /// - If false, removes current user from the list
     private func filterRecipients(attendees: [String], currentUserEmail: String?) -> [String] {
+        // If setting is enabled, include everyone (including self)
+        if includeSelfInSummaryEmail {
+            return attendees
+        }
+
+        // Otherwise, filter out current user
         guard let currentEmail = currentUserEmail?.lowercased() else {
             return attendees
         }
@@ -136,17 +208,117 @@ final class SummaryEmailManager: ObservableObject {
         }
     }
 
-    /// Format summary as plain text for email body
-    private func formatSummaryAsPlainText(summary: String, meetingSubject: String) -> String {
-        """
-        Саммари встречи: \(meetingSubject)
-        ================================================
+    /// Get live event from cache by meeting ID
+    private func getLiveEvent(meetingId: String?) -> EASCalendarEvent? {
+        guard let meetingId = meetingId else { return nil }
 
-        \(summary)
+        let calendarManager = EASCalendarManager.shared
 
-        ------------------------------------------------
-        Отправлено из Vanta Speech
-        """
+        // Try exact match
+        if let event = calendarManager.cachedEvents.first(where: { $0.id == meetingId }) {
+            return event
+        }
+
+        // Try base ID for recurring events
+        let baseId = meetingId.components(separatedBy: "_").first ?? meetingId
+        return calendarManager.cachedEvents.first(where: { $0.id.hasPrefix(baseId) })
+    }
+
+    /// Build HTML email body using template
+    private func buildEmailHTML(
+        recording: Recording,
+        summary: String,
+        event: EASCalendarEvent?,
+        attendeeNames: [String]
+    ) -> String {
+        let preset = recording.preset ?? .projectMeeting
+
+        // Use live event subject (most up-to-date) or fall back to stored/title
+        let meetingSubject = event?.subject ?? recording.linkedMeetingSubject ?? recording.title
+
+        let context = SummaryEmailContext(
+            meetingSubject: meetingSubject,
+            meetingLocation: event?.location,
+            meetingStartTime: event?.startTime,
+            meetingEndTime: event?.endTime,
+            meetingDuration: event?.formattedDuration,
+            attendeeNames: attendeeNames,
+            attendeeCount: attendeeNames.isEmpty
+                ? recording.linkedMeetingAttendeeEmails.count
+                : attendeeNames.count,
+            recordingTitle: recording.title,
+            presetDisplayName: preset.displayName,
+            summaryMarkdown: summary,
+            feedbackEmail: "t.grushko@pos-credit.ru"
+        )
+
+        return SummaryEmailTemplate.render(context: context)
+    }
+
+    /// Get attendee names from live event, or format emails as fallback
+    /// Includes organizer in the list
+    private func getAttendeeNames(from event: EASCalendarEvent?, fallbackEmails: [String]) -> [String] {
+        // If we have live event with attendees, use their names
+        if let event = event {
+            var names = event.humanAttendees.map { attendee in
+                // Use name if available, otherwise format email
+                if !attendee.name.isEmpty {
+                    return formatName(attendee.name)
+                } else {
+                    return formatEmailAsName(attendee.email)
+                }
+            }
+
+            // Add organizer if present and not already in the list
+            if let organizer = event.organizer {
+                let organizerName = !organizer.name.isEmpty
+                    ? formatName(organizer.name)
+                    : formatEmailAsName(organizer.email)
+
+                // Check if organizer is already in the list (by comparing formatted names)
+                if !names.contains(organizerName) {
+                    names.insert(organizerName, at: 0) // Organizer first
+                }
+            }
+
+            if !names.isEmpty {
+                return names
+            }
+        }
+
+        // Fallback: format emails as names
+        return fallbackEmails.map { formatEmailAsName($0) }
+    }
+
+    /// Format full name to short format (Грушко Т.А.)
+    /// Supports formats: "Фамилия Имя Отчество" → "Фамилия И.О."
+    private func formatName(_ name: String) -> String {
+        let parts = name.components(separatedBy: " ").filter { !$0.isEmpty }
+        guard parts.count >= 2 else { return name }
+
+        // Format: "Фамилия Имя Отчество" → "Фамилия И.О."
+        let lastName = parts[0]
+        let firstInitial = parts[1].prefix(1)
+
+        if parts.count >= 3 {
+            // Has patronymic
+            let patronymicInitial = parts[2].prefix(1)
+            return "\(lastName) \(firstInitial).\(patronymicInitial)."
+        } else {
+            // Only first name
+            return "\(lastName) \(firstInitial)."
+        }
+    }
+
+    /// Format email address as name (ivanov.i → Ivanov I.)
+    private func formatEmailAsName(_ email: String) -> String {
+        let localPart = email.components(separatedBy: "@").first ?? email
+        // Replace dots/underscores with spaces and capitalize
+        let formatted = localPart
+            .replacingOccurrences(of: ".", with: " ")
+            .replacingOccurrences(of: "_", with: " ")
+            .capitalized
+        return formatted
     }
 
     /// Encode email array to JSON string
@@ -164,9 +336,7 @@ final class SummaryEmailManager: ObservableObject {
 extension Recording {
     /// Whether this recording can send a summary email
     var canSendSummary: Bool {
-        hasLinkedMeeting &&
-        summaryText != nil &&
-        !linkedMeetingAttendeeEmails.isEmpty
+        hasLinkedMeeting && summaryText != nil
     }
 
     /// Whether summary was already sent
