@@ -23,21 +23,23 @@ struct RecordingView: View {
 
     @StateObject private var presetSettings = PresetSettings.shared
     @StateObject private var calendarManager = EASCalendarManager.shared
-    @AppStorage("defaultRecordingMode") private var defaultRecordingMode = "standard"
+
+    /// Текущий режим записи в сессии (не сохраняется при перезапуске)
+    @State private var currentRecordingMode = "standard"
 
     /// Текущий режим записи
     private var isRealtimeMode: Bool {
-        defaultRecordingMode == "realtime"
+        currentRecordingMode == "realtime"
     }
 
     /// Режим импорта
     private var isImportMode: Bool {
-        defaultRecordingMode == "import"
+        currentRecordingMode == "import"
     }
 
     /// Текущий режим для отображения
     private var currentModeDisplayName: String {
-        switch defaultRecordingMode {
+        switch currentRecordingMode {
         case "realtime": return "Real-time"
         case "import": return "Импорт"
         default: return "Записать"
@@ -46,7 +48,7 @@ struct RecordingView: View {
 
     /// Иконка текущего режима
     private var currentModeIcon: String {
-        switch defaultRecordingMode {
+        switch currentRecordingMode {
         case "realtime": return "text.badge.plus"
         case "import": return "square.and.arrow.down"
         default: return "mic.fill"
@@ -63,8 +65,8 @@ struct RecordingView: View {
                 // Main content
                 ScrollView {
                     VStack(spacing: 16) {
-                        // Режим записи
-                        Picker("Режим", selection: $defaultRecordingMode) {
+                        // Режим записи (временный для сессии)
+                        Picker("Режим", selection: $currentRecordingMode) {
                             Text("Обычная").tag("standard")
                             Text("Real-time").tag("realtime")
                             Text("Импорт").tag("import")
@@ -73,6 +75,7 @@ struct RecordingView: View {
 
                         // Upcoming meetings from Exchange calendar
                         UpcomingMeetingsSection()
+                            .environment(\.currentRecordingMode, currentRecordingMode)
 
                         // Today's recordings
                         TodayRecordingsSection()
@@ -95,6 +98,11 @@ struct RecordingView: View {
                 }
             }
             .navigationTitle("Запись")
+            .onAppear {
+                // Инициализируем текущий режим из настроек по умолчанию
+                let defaultMode = UserDefaults.standard.string(forKey: "defaultRecordingMode") ?? "standard"
+                currentRecordingMode = defaultMode
+            }
             .sheet(isPresented: $showRecordingSheet) {
                 if let preset = coordinator.currentPreset {
                     ActiveRecordingSheet(preset: preset, onStop: stopRecording)

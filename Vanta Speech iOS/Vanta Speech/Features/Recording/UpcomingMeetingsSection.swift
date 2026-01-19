@@ -1,6 +1,19 @@
 import SwiftUI
 import Combine
 
+// MARK: - Environment Key for Recording Mode
+
+private struct RecordingModeKey: EnvironmentKey {
+    static let defaultValue: String = "standard"
+}
+
+extension EnvironmentValues {
+    var currentRecordingMode: String {
+        get { self[RecordingModeKey.self] }
+        set { self[RecordingModeKey.self] = newValue }
+    }
+}
+
 /// Section showing upcoming calendar meetings from Exchange
 struct UpcomingMeetingsSection: View {
     @StateObject private var calendarManager = EASCalendarManager.shared
@@ -90,8 +103,8 @@ struct UpcomingMeetingsSection: View {
 private struct MeetingCard: View {
     let event: EASCalendarEvent
     @EnvironmentObject var coordinator: RecordingCoordinator
+    @Environment(\.currentRecordingMode) private var currentRecordingMode
     @StateObject private var presetSettings = PresetSettings.shared
-    @AppStorage("defaultRecordingMode") private var defaultRecordingMode = "standard"
     @State private var showDetail = false
     @State private var showRecordOptions = false
     @State private var showRealtimeWarning = false
@@ -247,7 +260,7 @@ private struct MeetingCard: View {
     }
 
     private var isRealtimeMode: Bool {
-        defaultRecordingMode == "realtime"
+        currentRecordingMode == "realtime"
     }
 
     private func startRecordingForMeeting(preset: RecordingPreset) {

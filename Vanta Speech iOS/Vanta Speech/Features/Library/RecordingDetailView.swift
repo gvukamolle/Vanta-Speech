@@ -813,7 +813,20 @@ struct RecordingDetailView: View {
     }
 
     private func exportToFiles() {
-        // TODO: Implement export to Files app
+        let url = URL(fileURLWithPath: recording.audioFileURL)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            errorMessage = "Аудиофайл не найден"
+            showError = true
+            return
+        }
+
+        let picker = UIDocumentPickerViewController(forExporting: [url])
+
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let window = windowScene.windows.first,
+           let rootVC = window.rootViewController {
+            rootVC.present(picker, animated: true)
+        }
     }
 
     // MARK: - Continue Recording Actions

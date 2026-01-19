@@ -21,7 +21,8 @@ struct iPadRecordingContentView: View {
     @State private var showError = false
     @State private var errorMessage = ""
 
-    @AppStorage("defaultRecordingMode") private var defaultRecordingMode = "standard"
+    /// Текущий режим записи в сессии (не сохраняется при перезапуске)
+    @State private var currentRecordingMode = "standard"
 
     private let calendar = Calendar.current
 
@@ -44,8 +45,8 @@ struct iPadRecordingContentView: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
-                // Режим записи
-                Picker("Режим", selection: $defaultRecordingMode) {
+                // Режим записи (временный для сессии)
+                Picker("Режим", selection: $currentRecordingMode) {
                     Text("Обычная").tag("standard")
                     Text("Real-time").tag("realtime")
                 }
@@ -69,6 +70,11 @@ struct iPadRecordingContentView: View {
             }
         }
         .navigationTitle("Запись")
+        .onAppear {
+            // Инициализируем текущий режим из настроек по умолчанию
+            let defaultMode = UserDefaults.standard.string(forKey: "defaultRecordingMode") ?? "standard"
+            currentRecordingMode = defaultMode
+        }
         .sheet(isPresented: $showRecordingSheet) {
             if let preset = coordinator.currentPreset {
                 ActiveRecordingSheet(preset: preset, onStop: stopRecording)
@@ -218,7 +224,7 @@ struct iPadRecordingContentView: View {
             Menu {
                 ForEach(presetSettings.enabledPresets, id: \.rawValue) { preset in
                     Button {
-                        let isRealtime = defaultRecordingMode == "realtime"
+                        let isRealtime = currentRecordingMode == "realtime"
                         startRecordingWithPreset(preset, realtime: isRealtime)
                     } label: {
                         Label(preset.displayName, systemImage: preset.icon)
@@ -230,11 +236,11 @@ struct iPadRecordingContentView: View {
                         ProgressView()
                             .tint(.primary)
                     } else {
-                        Image(systemName: defaultRecordingMode == "realtime" ? "text.badge.plus" : "mic.fill")
+                        Image(systemName: currentRecordingMode == "realtime" ? "text.badge.plus" : "mic.fill")
                             .font(.title2)
                     }
 
-                    Text(defaultRecordingMode == "realtime" ? "Real-time" : "Записать")
+                    Text(currentRecordingMode == "realtime" ? "Real-time" : "Записать")
                         .font(.title3)
                         .fontWeight(.semibold)
                 }
