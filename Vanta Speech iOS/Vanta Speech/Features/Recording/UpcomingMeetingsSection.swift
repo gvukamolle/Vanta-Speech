@@ -89,8 +89,13 @@ struct UpcomingMeetingsSection: View {
 
 private struct MeetingCard: View {
     let event: EASCalendarEvent
+    @EnvironmentObject var coordinator: RecordingCoordinator
+    @StateObject private var presetSettings = PresetSettings.shared
+    @AppStorage("defaultRecordingMode") private var defaultRecordingMode = "standard"
     @State private var showDetail = false
     @State private var showRecordOptions = false
+    @State private var showRealtimeWarning = false
+    @State private var pendingRealtimePreset: RecordingPreset?
 
     private var isOngoing: Bool {
         let now = Date()
@@ -206,24 +211,159 @@ private struct MeetingCard: View {
         .sheet(isPresented: $showDetail) {
             MeetingDetailSheet(event: event)
         }
-        .confirmationDialog(
-            event.subject,
-            isPresented: $showRecordOptions,
-            titleVisibility: .visible
-        ) {
-            Button("Начать запись") {
-                // Store meeting ID for linking - will be picked up by RecordingCoordinator
-                MeetingRecordingLink.shared.pendingMeetingEvent = event
-                // Notify to show preset picker in RecordingView
-                NotificationCenter.default.post(name: .startRecordingForMeeting, object: event)
-            }
-            Button("Детали встречи") {
-                showDetail = true
-            }
-            Button("Отмена", role: .cancel) {}
-        } message: {
-            Text("Запись будет привязана к этой встрече (\(event.humanAttendees.count) участн.)")
+        .sheet(isPresented: $showRecordOptions) {
+            MeetingRecordOptionsSheet(
+                event: event,
+                presets: presetSettings.enabledPresets,
+                isRealtimeMode: isRealtimeMode,
+                onSelectPreset: { preset in
+                    showRecordOptions = false
+                    startRecordingForMeeting(preset: preset)
+                },
+                onShowDetails: {
+                    showRecordOptions = false
+                    showDetail = true
+                },
+                onCancel: {
+                    showRecordOptions = false
+                }
+            )
+            .presentationDetents([.medium])
+            .presentationDragIndicator(.visible)
         }
+        .alert("Real-time транскрипция", isPresented: $showRealtimeWarning) {
+            Button("Начать запись") {
+                if let preset = pendingRealtimePreset {
+                    performStartRecording(preset: preset, realtime: true)
+                }
+                pendingRealtimePreset = nil
+            }
+            Button("Отмена", role: .cancel) {
+                pendingRealtimePreset = nil
+            }
+        } message: {
+            Text("В этом режиме не сворачивайте приложение. При сворачивании запись будет приостановлена.")
+        }
+    }
+
+    private var isRealtimeMode: Bool {
+        defaultRecordingMode == "realtime"
+    }
+
+    private func startRecordingForMeeting(preset: RecordingPreset) {
+        // Store meeting for linking
+        MeetingRecordingLink.shared.pendingMeetingEvent = event
+
+        if isRealtimeMode {
+            // Show warning for realtime mode
+            pendingRealtimePreset = preset
+            showRealtimeWarning = true
+        } else {
+            performStartRecording(preset: preset, realtime: false)
+        }
+    }
+
+    private func performStartRecording(preset: RecordingPreset, realtime: Bool) {
+        Task {
+            do {
+                if realtime {
+                    try await coordinator.startRealtimeRecording(preset: preset)
+                } else {
+                    try await coordinator.startRecording(preset: preset)
+                }
+            } catch {
+                debugCaptureError(error, context: "Starting recording for meeting")
+            }
+        }
+    }
+}
+
+// MARK: - Meeting Record Options Sheet
+
+private struct MeetingRecordOptionsSheet: View {
+    let event: EASCalendarEvent
+    let presets: [RecordingPreset]
+    let isRealtimeMode: Bool
+    let onSelectPreset: (RecordingPreset) -> Void
+    let onShowDetails: () -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                // Meeting info
+                Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(event.subject)
+                            .font(.headline)
+
+                        HStack(spacing: 12) {
+                            Label(formattedTime, systemImage: "clock")
+                            if !event.humanAttendees.isEmpty {
+                                Label("\(event.humanAttendees.count) участн.", systemImage: "person.2")
+                            }
+                        }
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                } footer: {
+                    Text("Запись будет привязана к этой встрече")
+                }
+
+                // Preset options
+                Section {
+                    ForEach(presets, id: \.rawValue) { preset in
+                        Button {
+                            onSelectPreset(preset)
+                        } label: {
+                            Label {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(preset.displayName)
+                                        .foregroundStyle(.primary)
+                                    if isRealtimeMode {
+                                        Text("Real-time режим")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            } icon: {
+                                Image(systemName: preset.icon)
+                                    .foregroundStyle(.blue)
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Тип записи")
+                }
+
+                // Details button
+                Section {
+                    Button {
+                        onShowDetails()
+                    } label: {
+                        Label("Детали встречи", systemImage: "info.circle")
+                    }
+                }
+            }
+            .navigationTitle("Начать запись")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Отмена") {
+                        onCancel()
+                    }
+                }
+            }
+        }
+    }
+
+    private var formattedTime: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        let start = formatter.string(from: event.startTime)
+        let end = formatter.string(from: event.endTime)
+        return "\(start) — \(end)"
     }
 }
 

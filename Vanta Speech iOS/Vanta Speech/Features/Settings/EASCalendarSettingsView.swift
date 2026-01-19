@@ -87,11 +87,17 @@ struct EASCalendarSettingsView: View {
 
     private var emailSettingsSection: some View {
         Section {
+            Toggle("Автоматическая отправка", isOn: $summaryEmailManager.autoSendSummaryEnabled)
+
             Toggle("Отправлять копию себе", isOn: $summaryEmailManager.includeSelfInSummaryEmail)
         } header: {
             Text("Саммари по email")
         } footer: {
-            Text("При отправке саммари участникам встречи вы также получите копию письма")
+            if summaryEmailManager.autoSendSummaryEnabled {
+                Text("Саммари будет автоматически отправляться участникам встречи сразу после генерации. Вы также получите копию письма.")
+            } else {
+                Text("При ручной отправке саммари участникам встречи вы также получите копию письма")
+            }
         }
     }
 

@@ -570,23 +570,51 @@ final class EASCalendarManager: ObservableObject {
         cachedEvents.sorted { $0.startTime < $1.startTime }
     }
 
-    /// Find the most probable meeting for a recording based on start time proximity
+    /// Find the most probable meeting for a recording based on time overlap
+    /// Note: recording.createdAt is the END time of the recording (when it was stopped)
     func findMostProbableMeeting(for recording: Recording) -> EASCalendarEvent? {
-        let recordingStart = recording.createdAt
+        // recording.createdAt is the END time of the recording
+        let recordingEnd = recording.createdAt
+        // Calculate start time using duration
+        let recordingStart = recordingEnd.addingTimeInterval(-recording.duration)
+
         let calendar = Calendar.current
 
         // Filter events for the same day as the recording
         let sameDayEvents = cachedEvents.filter { event in
-            calendar.isDate(event.startTime, inSameDayAs: recordingStart)
+            calendar.isDate(event.startTime, inSameDayAs: recordingEnd) ||
+            calendar.isDate(event.endTime, inSameDayAs: recordingEnd)
         }
 
         guard !sameDayEvents.isEmpty else { return nil }
 
-        // Return event with minimum time difference from recording start
+        // Find events that overlap with the recording time
+        let overlappingEvents = sameDayEvents.filter { event in
+            // Overlap check: event.startTime <= recordingEnd AND event.endTime >= recordingStart
+            event.startTime <= recordingEnd && event.endTime >= recordingStart
+        }
+
+        // If we have overlapping events, return the one with maximum overlap
+        if !overlappingEvents.isEmpty {
+            return overlappingEvents.max { event1, event2 in
+                let overlap1 = calculateOverlap(event: event1, recordingStart: recordingStart, recordingEnd: recordingEnd)
+                let overlap2 = calculateOverlap(event: event2, recordingStart: recordingStart, recordingEnd: recordingEnd)
+                return overlap1 < overlap2
+            }
+        }
+
+        // Fallback: find event with minimum difference between event end time and recording end time
         return sameDayEvents.min { event1, event2 in
-            let diff1 = abs(event1.startTime.timeIntervalSince(recordingStart))
-            let diff2 = abs(event2.startTime.timeIntervalSince(recordingStart))
+            let diff1 = abs(event1.endTime.timeIntervalSince(recordingEnd))
+            let diff2 = abs(event2.endTime.timeIntervalSince(recordingEnd))
             return diff1 < diff2
         }
+    }
+
+    /// Calculate overlap duration between event and recording
+    private func calculateOverlap(event: EASCalendarEvent, recordingStart: Date, recordingEnd: Date) -> TimeInterval {
+        let overlapStart = max(event.startTime, recordingStart)
+        let overlapEnd = min(event.endTime, recordingEnd)
+        return max(0, overlapEnd.timeIntervalSince(overlapStart))
     }
 }

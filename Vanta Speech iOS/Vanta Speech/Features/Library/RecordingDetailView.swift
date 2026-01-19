@@ -388,6 +388,10 @@ struct RecordingDetailView: View {
                 onCheckboxToggle: { lineIndex in
                     guard let currentText = recording.summaryText else { return }
                     recording.summaryText = MarkdownCheckboxToggler.toggleCheckbox(in: currentText, at: lineIndex)
+                },
+                isEditable: true,
+                onContentChange: { newContent in
+                    recording.summaryText = newContent
                 }
             )
         }
@@ -849,7 +853,14 @@ struct ContentSheetView: View {
     let content: String
     /// Optional callback when a checkbox is toggled. Parameter is the line number (0-indexed).
     var onCheckboxToggle: ((Int) -> Void)?
+    /// Whether the content is editable (shows edit button)
+    var isEditable: Bool = false
+    /// Callback when content is changed (for editable mode)
+    var onContentChange: ((String) -> Void)?
+
     @Environment(\.dismiss) private var dismiss
+    @State private var isEditing = false
+    @State private var editedContent = ""
 
     // Integration states from settings
     @AppStorage("confluence_connected") private var confluenceConnected = false
@@ -862,30 +873,47 @@ struct ContentSheetView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                if content.isEmpty {
-                    VStack(spacing: 12) {
-                        Image(systemName: "text.badge.xmark")
-                            .font(.system(size: 48))
-                            .foregroundStyle(.secondary)
-                        Text("Недоступно")
-                            .font(.title3)
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 100)
+            Group {
+                if isEditing {
+                    // Edit mode - Plain text editor (markdown stripped)
+                    TextEditor(text: $editedContent)
+                        .font(.body)
+                        .padding(.horizontal)
+                        .scrollContentBackground(.hidden)
+                        .background(Color(.systemGroupedBackground))
                 } else {
-                    MarkdownContentView(text: content, onCheckboxToggle: onCheckboxToggle)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding()
+                    // View mode - MarkdownContentView
+                    ScrollView {
+                        if content.isEmpty {
+                            VStack(spacing: 12) {
+                                Image(systemName: "text.badge.xmark")
+                                    .font(.system(size: 48))
+                                    .foregroundStyle(.secondary)
+                                Text("Недоступно")
+                                    .font(.title3)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 100)
+                        } else {
+                            MarkdownContentView(text: content, onCheckboxToggle: onCheckboxToggle)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding()
+                        }
+                    }
+                    .background(Color(.systemGroupedBackground))
                 }
             }
-            .background(Color(.systemGroupedBackground))
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    if !content.isEmpty {
+                    if isEditing {
+                        Button("Отмена") {
+                            editedContent = content
+                            isEditing = false
+                        }
+                    } else if !content.isEmpty {
                         Menu {
                             // Show connected integrations
                             if confluenceConnected {
@@ -916,7 +944,14 @@ struct ContentSheetView: View {
                                 Divider()
                             }
 
-                            // Always show Share option
+                            // Copy option
+                            Button {
+                                copyToClipboard()
+                            } label: {
+                                Label("Копировать", systemImage: "doc.on.doc")
+                            }
+
+                            // Share option
                             Button {
                                 shareContent()
                             } label: {
@@ -932,14 +967,18 @@ struct ContentSheetView: View {
                 }
 
                 ToolbarItem(placement: .topBarTrailing) {
-                    if !content.isEmpty {
-                        Button {
-                            copyToClipboard()
-                        } label: {
-                            HStack(spacing: 4) {
-                                Text("Копировать")
-                                Image(systemName: "doc.on.doc")
-                            }
+                    if isEditing {
+                        Button("Сохранить") {
+                            // Convert plain text back to markdown before saving
+                            onContentChange?(restoreMarkdown(editedContent))
+                            isEditing = false
+                        }
+                        .fontWeight(.semibold)
+                    } else if !content.isEmpty && isEditable {
+                        Button("Редактировать") {
+                            // Strip markdown for cleaner editing experience
+                            editedContent = stripMarkdown(content)
+                            isEditing = true
                         }
                     }
                 }
@@ -947,6 +986,9 @@ struct ContentSheetView: View {
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
+        .onAppear {
+            editedContent = content
+        }
     }
 
     private func copyToClipboard() {
@@ -989,6 +1031,47 @@ struct ContentSheetView: View {
     private func exportToGoogleDocs() {
         // TODO: Implement Google Docs export
         debugLog("Export to Google Docs: \(title)", module: "ContentSheetView")
+    }
+
+    /// Convert checkboxes to symbols for easier editing
+    /// Keeps all other markdown (headers, bold, italic) intact
+    private func stripMarkdown(_ text: String) -> String {
+        var result = text
+
+        // Only convert checkboxes to symbols - leave everything else as-is
+        // - [ ] Task -> ☐ Task
+        // - [x] Task -> ☑ Task
+        result = result.replacingOccurrences(of: "- [ ] ", with: "☐ ")
+        result = result.replacingOccurrences(of: "- [x] ", with: "☑ ")
+        result = result.replacingOccurrences(of: "- [X] ", with: "☑ ")
+        result = result.replacingOccurrences(of: "* [ ] ", with: "☐ ")
+        result = result.replacingOccurrences(of: "* [x] ", with: "☑ ")
+        result = result.replacingOccurrences(of: "* [X] ", with: "☑ ")
+        // Without bullet prefix
+        result = result.replacingOccurrences(of: "[ ] ", with: "☐ ")
+        result = result.replacingOccurrences(of: "[x] ", with: "☑ ")
+        result = result.replacingOccurrences(of: "[X] ", with: "☑ ")
+
+        return result
+    }
+
+    /// Restore markdown formatting from plain text before saving
+    private func restoreMarkdown(_ text: String) -> String {
+        var result = text
+
+        // Convert checkbox symbols back to markdown
+        // ☐ → - [ ]
+        // ☑ → - [x]
+        result = result.replacingOccurrences(of: "☐ ", with: "- [ ] ")
+        result = result.replacingOccurrences(of: "☑ ", with: "- [x] ")
+
+        // Handle checkboxes at line start without space after
+        result = result.replacingOccurrences(of: "^☐", with: "- [ ]", options: .regularExpression)
+        result = result.replacingOccurrences(of: "\n☐", with: "\n- [ ]", options: .regularExpression)
+        result = result.replacingOccurrences(of: "^☑", with: "- [x]", options: .regularExpression)
+        result = result.replacingOccurrences(of: "\n☑", with: "\n- [x]", options: .regularExpression)
+
+        return result
     }
 }
 

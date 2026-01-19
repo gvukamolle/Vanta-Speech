@@ -331,6 +331,46 @@ struct MarkdownContentView: View {
             }
         }
 
+        /// Parse task list item supporting multiple formats:
+        /// - Standard: "- [ ] Task" or "- [x] Task"
+        /// - With asterisk: "* [ ] Task" or "* [x] Task"
+        /// - Without dash: "[ ] Task" or "[x] Task"
+        func parseTaskListItem(_ line: String) -> (isChecked: Bool, text: String)? {
+            // Standard formats with dash
+            if line.hasPrefix("- [ ] ") {
+                return (isChecked: false, text: String(line.dropFirst(6)))
+            }
+            if line.hasPrefix("- [x] ") || line.hasPrefix("- [X] ") {
+                return (isChecked: true, text: String(line.dropFirst(6)))
+            }
+
+            // Asterisk format
+            if line.hasPrefix("* [ ] ") {
+                return (isChecked: false, text: String(line.dropFirst(6)))
+            }
+            if line.hasPrefix("* [x] ") || line.hasPrefix("* [X] ") {
+                return (isChecked: true, text: String(line.dropFirst(6)))
+            }
+
+            // Without dash/asterisk (fallback for LLM variations)
+            if line.hasPrefix("[ ] ") {
+                return (isChecked: false, text: String(line.dropFirst(4)))
+            }
+            if line.hasPrefix("[x] ") || line.hasPrefix("[X] ") {
+                return (isChecked: true, text: String(line.dropFirst(4)))
+            }
+
+            // Compact format without space inside brackets
+            if line.hasPrefix("- [] ") {
+                return (isChecked: false, text: String(line.dropFirst(5)))
+            }
+            if line.hasPrefix("[] ") {
+                return (isChecked: false, text: String(line.dropFirst(3)))
+            }
+
+            return nil
+        }
+
         for (index, line) in lines.enumerated() {
             lineIndex = index
             let trimmedLine = line.trimmingCharacters(in: .whitespaces)
@@ -419,14 +459,13 @@ struct MarkdownContentView: View {
             }
 
             // Task list (checkbox) - must check before bullet list
-            if trimmedLine.hasPrefix("- [ ] ") || trimmedLine.hasPrefix("- [x] ") || trimmedLine.hasPrefix("- [X] ") {
+            // Support multiple formats: "- [ ] ", "* [ ] ", "[ ] " (without dash)
+            if let taskMatch = parseTaskListItem(trimmedLine) {
                 flushParagraph()
                 flushList()
                 flushTable()
 
-                let isChecked = trimmedLine.hasPrefix("- [x] ") || trimmedLine.hasPrefix("- [X] ")
-                let taskText = String(trimmedLine.dropFirst(6))
-                taskItems.append(MarkdownBlock.TaskItem(isChecked: isChecked, text: taskText, lineNumber: lineIndex))
+                taskItems.append(MarkdownBlock.TaskItem(isChecked: taskMatch.isChecked, text: taskMatch.text, lineNumber: lineIndex))
                 continue
             }
 

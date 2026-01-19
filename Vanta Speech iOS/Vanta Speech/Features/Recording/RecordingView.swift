@@ -163,6 +163,19 @@ struct RecordingView: View {
                         }
                 }
             }
+            // Preset picker dialog for regular recording (from mic button)
+            .confirmationDialog(
+                "Выберите тип записи",
+                isPresented: $showPresetPicker,
+                titleVisibility: .visible
+            ) {
+                ForEach(presetSettings.enabledPresets, id: \.rawValue) { preset in
+                    Button(preset.displayName) {
+                        startRecordingWithPreset(preset, realtime: isRealtimeMode)
+                    }
+                }
+                Button("Отмена", role: .cancel) {}
+            }
         }
     }
 
@@ -208,18 +221,6 @@ struct RecordingView: View {
         }
         .buttonStyle(.plain)
         .disabled(recorder.isConverting)
-        .confirmationDialog(
-            "Выберите тип записи",
-            isPresented: $showPresetPicker,
-            titleVisibility: .visible
-        ) {
-            ForEach(presetSettings.enabledPresets, id: \.rawValue) { preset in
-                Button(preset.displayName) {
-                    startRecordingWithPreset(preset, realtime: isRealtimeMode)
-                }
-            }
-            Button("Отмена", role: .cancel) {}
-        }
     }
 
     /// Обработка нажатия на кнопку

@@ -4,6 +4,7 @@ import Foundation
 struct MarkdownCheckboxToggler {
 
     /// Toggle a checkbox at the given line index
+    /// Supports multiple formats: "- [ ] ", "* [ ] ", "[ ] ", "- [] ", "[] "
     /// - Parameters:
     ///   - text: The markdown text containing checkboxes
     ///   - lineIndex: The line number (0-indexed) to toggle
@@ -14,16 +15,42 @@ struct MarkdownCheckboxToggler {
 
         let line = lines[lineIndex]
 
-        // Toggle unchecked -> checked
+        // Standard format: "- [ ] " / "- [x] "
         if line.contains("- [ ] ") {
             lines[lineIndex] = line.replacingOccurrences(of: "- [ ] ", with: "- [x] ")
         }
-        // Toggle checked -> unchecked (both lowercase and uppercase x)
         else if line.contains("- [x] ") {
             lines[lineIndex] = line.replacingOccurrences(of: "- [x] ", with: "- [ ] ")
         }
         else if line.contains("- [X] ") {
             lines[lineIndex] = line.replacingOccurrences(of: "- [X] ", with: "- [ ] ")
+        }
+        // Asterisk format: "* [ ] " / "* [x] "
+        else if line.contains("* [ ] ") {
+            lines[lineIndex] = line.replacingOccurrences(of: "* [ ] ", with: "* [x] ")
+        }
+        else if line.contains("* [x] ") {
+            lines[lineIndex] = line.replacingOccurrences(of: "* [x] ", with: "* [ ] ")
+        }
+        else if line.contains("* [X] ") {
+            lines[lineIndex] = line.replacingOccurrences(of: "* [X] ", with: "* [ ] ")
+        }
+        // Without dash: "[ ] " / "[x] "
+        else if line.contains("[ ] ") {
+            lines[lineIndex] = line.replacingOccurrences(of: "[ ] ", with: "[x] ")
+        }
+        else if line.contains("[x] ") {
+            lines[lineIndex] = line.replacingOccurrences(of: "[x] ", with: "[ ] ")
+        }
+        else if line.contains("[X] ") {
+            lines[lineIndex] = line.replacingOccurrences(of: "[X] ", with: "[ ] ")
+        }
+        // Compact format: "- [] " / "[] "
+        else if line.contains("- [] ") {
+            lines[lineIndex] = line.replacingOccurrences(of: "- [] ", with: "- [x] ")
+        }
+        else if line.contains("[] ") {
+            lines[lineIndex] = line.replacingOccurrences(of: "[] ", with: "[x] ")
         }
 
         return lines.joined(separator: "\n")
@@ -37,15 +64,8 @@ struct MarkdownCheckboxToggler {
         var result: [(Int, Bool, String)] = []
 
         for (index, line) in lines.enumerated() {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-
-            if trimmed.hasPrefix("- [ ] ") {
-                let taskText = String(trimmed.dropFirst(6))
-                result.append((index, false, taskText))
-            }
-            else if trimmed.hasPrefix("- [x] ") || trimmed.hasPrefix("- [X] ") {
-                let taskText = String(trimmed.dropFirst(6))
-                result.append((index, true, taskText))
+            if let parsed = parseCheckboxLine(line) {
+                result.append((index, parsed.isChecked, parsed.text))
             }
         }
 
@@ -53,16 +73,42 @@ struct MarkdownCheckboxToggler {
     }
 
     /// Check if a line is a checkbox line
+    /// Supports multiple formats: "- [ ] ", "* [ ] ", "[ ] ", "- [] ", "[] "
     /// - Parameter line: The line to check
-    /// - Returns: Tuple of (isCheckbox, isChecked) or nil if not a checkbox
+    /// - Returns: Tuple of (isChecked, text) or nil if not a checkbox
     static func parseCheckboxLine(_ line: String) -> (isChecked: Bool, text: String)? {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
 
+        // Standard format: "- [ ] " / "- [x] "
         if trimmed.hasPrefix("- [ ] ") {
             return (false, String(trimmed.dropFirst(6)))
         }
-        else if trimmed.hasPrefix("- [x] ") || trimmed.hasPrefix("- [X] ") {
+        if trimmed.hasPrefix("- [x] ") || trimmed.hasPrefix("- [X] ") {
             return (true, String(trimmed.dropFirst(6)))
+        }
+
+        // Asterisk format: "* [ ] " / "* [x] "
+        if trimmed.hasPrefix("* [ ] ") {
+            return (false, String(trimmed.dropFirst(6)))
+        }
+        if trimmed.hasPrefix("* [x] ") || trimmed.hasPrefix("* [X] ") {
+            return (true, String(trimmed.dropFirst(6)))
+        }
+
+        // Without dash: "[ ] " / "[x] "
+        if trimmed.hasPrefix("[ ] ") {
+            return (false, String(trimmed.dropFirst(4)))
+        }
+        if trimmed.hasPrefix("[x] ") || trimmed.hasPrefix("[X] ") {
+            return (true, String(trimmed.dropFirst(4)))
+        }
+
+        // Compact format: "- [] " / "[] "
+        if trimmed.hasPrefix("- [] ") {
+            return (false, String(trimmed.dropFirst(5)))
+        }
+        if trimmed.hasPrefix("[] ") {
+            return (false, String(trimmed.dropFirst(3)))
         }
 
         return nil

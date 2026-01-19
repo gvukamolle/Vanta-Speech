@@ -38,6 +38,9 @@ final class AuthenticationManager: ObservableObject {
             currentSession = session
             isAuthenticated = true
             isLoading = false
+
+            // Auto-connect Exchange calendar after successful AD login
+            await autoConnectExchangeCalendar(username: username, password: password)
         } catch let authError as LDAPAuthService.AuthError {
             // LDAP specific errors with full description
             self.error = authError.errorDescription ?? authError.localizedDescription
@@ -48,6 +51,41 @@ final class AuthenticationManager: ObservableObject {
             self.error = "\(error.localizedDescription)\n\nПодробности: \(String(describing: error))"
             isLoading = false
             debugCaptureError(error, context: "Authentication")
+        }
+    }
+
+    /// Automatically connect Exchange calendar after successful AD login
+    /// Uses the same credentials as AD authentication
+    private func autoConnectExchangeCalendar(username: String, password: String) async {
+        let calendarManager = EASCalendarManager.shared
+
+        // Skip if already connected
+        guard !calendarManager.isConnected else {
+            debugLog("Exchange calendar already connected", module: "Auth", level: .info)
+            return
+        }
+
+        // Build full email: username -> username@pos-credit.ru
+        let fullUsername: String
+        if username.contains("@") {
+            fullUsername = username
+        } else {
+            fullUsername = username + Env.corporateEmailDomain
+        }
+
+        debugLog("Auto-connecting Exchange calendar for \(fullUsername)", module: "Auth", level: .info)
+
+        let success = await calendarManager.connect(
+            serverURL: Env.exchangeServerURL,
+            username: fullUsername,
+            password: password
+        )
+
+        if success {
+            debugLog("Exchange calendar auto-connected successfully", module: "Auth", level: .info)
+        } else {
+            // Don't show error to user - they can connect manually later
+            debugLog("Exchange calendar auto-connect failed: \(calendarManager.lastError?.localizedDescription ?? "unknown")", module: "Auth", level: .warning)
         }
     }
 

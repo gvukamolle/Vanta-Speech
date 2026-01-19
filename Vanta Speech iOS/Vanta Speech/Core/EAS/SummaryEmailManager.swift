@@ -9,6 +9,9 @@ final class SummaryEmailManager: ObservableObject {
 
     // MARK: - Settings
 
+    /// Automatically send summary to meeting participants after generation (default: false)
+    @AppStorage("summary_email_auto_send") var autoSendSummaryEnabled = false
+
     /// Include current user in summary email recipients (default: true)
     @AppStorage("summary_email_include_self") var includeSelfInSummaryEmail = true
 
@@ -128,6 +131,12 @@ final class SummaryEmailManager: ObservableObject {
     /// Check if recording should auto-send summary and send if conditions are met
     /// - Parameter recording: The recording to check
     func checkAndAutoSend(recording: Recording) async {
+        // Check if auto-send is enabled in settings
+        guard autoSendSummaryEnabled else {
+            debugLog("Auto-send disabled in settings, skipping", module: "SummaryEmail", level: .info)
+            return
+        }
+
         // Only auto-send if:
         // 1. Recording has linked meeting
         // 2. Has summary
