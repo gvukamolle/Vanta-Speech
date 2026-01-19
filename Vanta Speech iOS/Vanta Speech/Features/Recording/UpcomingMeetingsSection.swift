@@ -342,7 +342,7 @@ private struct MeetingRecordOptionsSheet: View {
                                 }
                             } icon: {
                                 Image(systemName: preset.icon)
-                                    .foregroundStyle(.blue)
+                                    .foregroundStyle(Color.pinkVibrant)
                             }
                         }
                     }

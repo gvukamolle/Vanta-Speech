@@ -19,7 +19,7 @@ struct RecordingView: View {
     @State private var showPresetPickerForImport = false
     @State private var importedAudioData: AudioImporter.ImportedAudio?
     @State private var isImporting = false
-    @State private var showPresetPicker = false  // Для выбора пресета перед записью
+    @State private var showRecordingOptionsSheet = false  // Sheet для выбора пресета с привязкой к встрече
 
     @StateObject private var presetSettings = PresetSettings.shared
     @StateObject private var calendarManager = EASCalendarManager.shared
@@ -53,6 +53,23 @@ struct RecordingView: View {
         case "import": return "square.and.arrow.down"
         default: return "mic.fill"
         }
+    }
+
+    /// Ближайшая встреча (текущая или следующая в течение 2 часов)
+    private var upcomingMeeting: EASCalendarEvent? {
+        let now = Date()
+        let twoHoursLater = now.addingTimeInterval(2 * 60 * 60)
+
+        return calendarManager.cachedEvents
+            .filter { event in
+                // Текущая встреча (уже началась, но не закончилась)
+                let isOngoing = event.startTime <= now && event.endTime > now
+                // Встреча начнётся в ближайшие 2 часа
+                let isUpcoming = event.startTime > now && event.startTime <= twoHoursLater
+                return isOngoing || isUpcoming
+            }
+            .sorted { $0.startTime < $1.startTime }
+            .first
     }
 
     var body: some View {
@@ -171,18 +188,25 @@ struct RecordingView: View {
                         }
                 }
             }
-            // Preset picker dialog for regular recording (from mic button)
-            .confirmationDialog(
-                "Выберите тип записи",
-                isPresented: $showPresetPicker,
-                titleVisibility: .visible
-            ) {
-                ForEach(presetSettings.enabledPresets, id: \.rawValue) { preset in
-                    Button(preset.displayName) {
+            // Sheet для выбора пресета с предложением привязки к встрече
+            .sheet(isPresented: $showRecordingOptionsSheet) {
+                RecordingOptionsSheet(
+                    upcomingMeeting: upcomingMeeting,
+                    presets: presetSettings.enabledPresets,
+                    isRealtimeMode: isRealtimeMode,
+                    onSelectPreset: { preset, linkToMeeting in
+                        showRecordingOptionsSheet = false
+                        if linkToMeeting, let meeting = upcomingMeeting {
+                            MeetingRecordingLink.shared.pendingMeetingEvent = meeting
+                        }
                         startRecordingWithPreset(preset, realtime: isRealtimeMode)
+                    },
+                    onCancel: {
+                        showRecordingOptionsSheet = false
                     }
-                }
-                Button("Отмена", role: .cancel) {}
+                )
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
             }
         }
     }
@@ -244,8 +268,8 @@ struct RecordingView: View {
             // Режим импорта - открываем file picker
             showFileImporter = true
         } else {
-            // Обычный/Real-time режим - показываем выбор пресета
-            showPresetPicker = true
+            // Обычный/Real-time режим - показываем sheet с выбором пресета и привязкой к встрече
+            showRecordingOptionsSheet = true
         }
     }
 
@@ -360,6 +384,102 @@ struct RecordingView: View {
         importedAudioData = nil
 
         debugLog("Import completed: \(audioData.originalFileName), duration: \(audioData.duration)s", module: "RecordingView")
+    }
+}
+
+// MARK: - Recording Options Sheet
+
+/// Sheet для выбора типа записи с предложением привязки к ближайшей встрече
+private struct RecordingOptionsSheet: View {
+    let upcomingMeeting: EASCalendarEvent?
+    let presets: [RecordingPreset]
+    let isRealtimeMode: Bool
+    let onSelectPreset: (RecordingPreset, Bool) -> Void  // (preset, linkToMeeting)
+    let onCancel: () -> Void
+
+    @State private var linkToMeeting = true
+
+    var body: some View {
+        NavigationStack {
+            List {
+                // Секция встречи (если есть ближайшая)
+                if let meeting = upcomingMeeting {
+                    Section {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(meeting.subject)
+                                .font(.headline)
+
+                            HStack(spacing: 12) {
+                                Label(formattedTime(meeting), systemImage: "clock")
+                                if !meeting.humanAttendees.isEmpty {
+                                    Label("\(meeting.humanAttendees.count) участн.", systemImage: "person.2")
+                                }
+                            }
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+
+                            Toggle("Привязать к встрече", isOn: $linkToMeeting)
+                                .tint(Color.pinkVibrant)
+                        }
+                        .padding(.vertical, 4)
+                    } header: {
+                        Text(isMeetingOngoing(meeting) ? "Текущая встреча" : "Ближайшая встреча")
+                    } footer: {
+                        if linkToMeeting {
+                            Text("Запись будет автоматически привязана к этой встрече")
+                        }
+                    }
+                }
+
+                // Секция выбора пресета
+                Section {
+                    ForEach(presets, id: \.rawValue) { preset in
+                        Button {
+                            onSelectPreset(preset, linkToMeeting && upcomingMeeting != nil)
+                        } label: {
+                            Label {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(preset.displayName)
+                                        .foregroundStyle(.primary)
+                                    if isRealtimeMode {
+                                        Text("Real-time режим")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            } icon: {
+                                Image(systemName: preset.icon)
+                                    .foregroundStyle(Color.pinkVibrant)
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Тип записи")
+                }
+            }
+            .navigationTitle("Начать запись")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Отмена") {
+                        onCancel()
+                    }
+                }
+            }
+        }
+    }
+
+    private func formattedTime(_ event: EASCalendarEvent) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        let start = formatter.string(from: event.startTime)
+        let end = formatter.string(from: event.endTime)
+        return "\(start) — \(end)"
+    }
+
+    private func isMeetingOngoing(_ event: EASCalendarEvent) -> Bool {
+        let now = Date()
+        return event.startTime <= now && event.endTime > now
     }
 }
 
