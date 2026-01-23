@@ -238,12 +238,13 @@ final class RealtimeSpeechRecognizer: NSObject, ObservableObject {
         audioFile = try AVAudioFile(forWriting: chunkURL, settings: recordingFormat.settings)
 
         // Создаём новый recognition request
-        recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
-        recognitionRequest?.shouldReportPartialResults = true
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        request.shouldReportPartialResults = true
+        recognitionRequest = request
 
         // Запускаем recognition task
-        recognitionTask = speechRecognizer?.recognitionTask(with: recognitionRequest!) { [weak self] result, error in
-            DispatchQueue.main.async {
+        recognitionTask = speechRecognizer?.recognitionTask(with: request) { [weak self] result, error in
+            Task { @MainActor in
                 self?.handleRecognitionResult(result, error: error)
             }
         }

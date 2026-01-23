@@ -9,11 +9,11 @@ struct iPadSettingsContentView: View {
     @AppStorage("autoTranscribe") private var autoTranscribe = false
     @AppStorage("appTheme") private var appTheme = AppTheme.system.rawValue
     @AppStorage("defaultRecordingMode") private var defaultRecordingMode = "standard"
-    @AppStorage("confluence_connected") private var confluenceConnected = false
 
     @StateObject private var presetSettings = PresetSettings.shared
     @StateObject private var authManager = AuthenticationManager.shared
     @StateObject private var calendarManager = EASCalendarManager.shared
+    @StateObject private var confluenceManager = ConfluenceManager.shared
 
     enum SettingItem: String, CaseIterable, Identifiable {
         case account = "Аккаунт"
@@ -40,17 +40,19 @@ struct iPadSettingsContentView: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            // Левая колонка: Список настроек
-            settingsList
-                .frame(width: 280)
+        GeometryReader { geometry in
+            HStack(spacing: 0) {
+                // Левая колонка: Список настроек (50%)
+                settingsList
+                    .frame(width: geometry.size.width * 0.5)
 
-            Divider()
+                Divider()
 
-            // Правая колонка: Детали настройки
-            settingDetail
+                // Правая колонка: Детали настройки (50%)
+                settingDetail
+                    .frame(width: geometry.size.width * 0.5)
+            }
         }
-        .navigationTitle("Настройки")
         .background(Color(.systemGroupedBackground))
     }
 
@@ -281,7 +283,12 @@ struct iPadSettingsContentView: View {
                     exchangeIntegrationRow
                 }
 
-                integrationRow(name: "Confluence", icon: "doc.text", isConnected: $confluenceConnected)
+                // Confluence
+                NavigationLink {
+                    ConfluenceSettingsView()
+                } label: {
+                    confluenceIntegrationRow
+                }
             }
 
             Spacer()
@@ -310,32 +317,23 @@ struct iPadSettingsContentView: View {
         .vantaGlassCard(cornerRadius: 12, shadowRadius: 0, tintOpacity: 0.15)
     }
 
-    private func integrationRow(name: String, icon: String, isConnected: Binding<Bool>) -> some View {
+    private var confluenceIntegrationRow: some View {
         HStack(spacing: 12) {
-            Image(systemName: icon)
+            Image(systemName: "doc.text")
                 .foregroundStyle(.secondary)
                 .frame(width: 24)
 
-            Text(name)
+            Text("Confluence")
 
             Spacer()
 
-            if isConnected.wrappedValue {
-                HStack(spacing: 8) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                    Button("Отключить") {
-                        isConnected.wrappedValue = false
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(.red)
-                }
-            } else {
-                Button("Подключить") {
-                    isConnected.wrappedValue = true
-                }
-                .buttonStyle(.bordered)
+            if confluenceManager.isAvailable {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
             }
+
+            Image(systemName: "chevron.right")
+                .foregroundStyle(.tertiary)
         }
         .padding()
         .vantaGlassCard(cornerRadius: 12, shadowRadius: 0, tintOpacity: 0.15)

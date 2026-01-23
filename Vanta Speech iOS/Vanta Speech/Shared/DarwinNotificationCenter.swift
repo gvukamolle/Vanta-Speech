@@ -2,6 +2,8 @@ import Foundation
 
 /// Darwin Notification Center для межпроцессной коммуникации между Widget Extension и Main App
 /// CFNotificationCenter работает между процессами, в отличие от NotificationCenter.default
+/// @MainActor обеспечивает thread-safety для callbacks и state
+@MainActor
 final class DarwinNotificationCenter {
 
     static let shared = DarwinNotificationCenter()
@@ -33,28 +35,30 @@ final class DarwinNotificationCenter {
     private init() {}
 
     // MARK: - Post Notifications (Widget Extension → Main App)
+    // nonisolated because CFNotificationCenterPostNotification is thread-safe
+    // and these can be called from Widget Extension (different process)
 
-    func postPauseRecording() {
+    nonisolated func postPauseRecording() {
         CFNotificationCenterPostNotification(center, NotificationName.pauseRecording, nil, nil, true)
     }
 
-    func postResumeRecording() {
+    nonisolated func postResumeRecording() {
         CFNotificationCenterPostNotification(center, NotificationName.resumeRecording, nil, nil, true)
     }
 
-    func postStopRecording() {
+    nonisolated func postStopRecording() {
         CFNotificationCenterPostNotification(center, NotificationName.stopRecording, nil, nil, true)
     }
 
-    func postStartTranscription() {
+    nonisolated func postStartTranscription() {
         CFNotificationCenterPostNotification(center, NotificationName.startTranscription, nil, nil, true)
     }
 
-    func postDismissActivity() {
+    nonisolated func postDismissActivity() {
         CFNotificationCenterPostNotification(center, NotificationName.dismissActivity, nil, nil, true)
     }
 
-    func postHideActivity() {
+    nonisolated func postHideActivity() {
         CFNotificationCenterPostNotification(center, NotificationName.hideActivity, nil, nil, true)
     }
 

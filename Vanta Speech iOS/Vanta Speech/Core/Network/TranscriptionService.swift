@@ -37,6 +37,7 @@ actor TranscriptionService {
         case serverError(String)
         case transcriptionFailed
         case summaryFailed
+        case cancelled
 
         var errorDescription: String? {
             switch self {
@@ -52,22 +53,35 @@ actor TranscriptionService {
                 return "Не удалось транскрибировать аудио"
             case .summaryFailed:
                 return "Не удалось создать саммари"
+            case .cancelled:
+                return "Операция отменена"
             }
         }
     }
 
+    /// Общая структура для парсинга ответов ChatCompletion API
+    private struct ChatResponse: Decodable {
+        struct Choice: Decodable {
+            struct Message: Decodable {
+                let content: String
+            }
+            let message: Message
+        }
+        let choices: [Choice]
+    }
+
     init() {
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 300 // 5 minutes for large files
-        config.timeoutIntervalForResource = 600 // 10 minutes total
+        config.timeoutIntervalForRequest = 1800 // 30 minutes for large files
+        config.timeoutIntervalForResource = 3600 // 60 minutes total
         self.session = URLSession(configuration: config)
     }
 
     // Legacy init for compatibility
     init(baseURL: URL) {
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 300
-        config.timeoutIntervalForResource = 600
+        config.timeoutIntervalForRequest = 1800
+        config.timeoutIntervalForResource = 3600
         self.session = URLSession(configuration: config)
     }
 
@@ -213,12 +227,16 @@ actor TranscriptionService {
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
+        request.timeoutInterval = 1800 // 30 minutes for large audio files
         request.setValue("Bearer \(Self.apiKey)", forHTTPHeaderField: "Authorization")
 
         let boundary = UUID().uuidString
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
 
         let audioData = try Data(contentsOf: fileURL)
+        let fileSizeMB = Double(audioData.count) / (1024 * 1024)
+        debugLog("Uploading audio: \(fileURL.lastPathComponent), size: \(String(format: "%.2f", fileSizeMB)) MB", module: "TranscriptionService", level: .info)
+
         let body = createTranscriptionBody(
             audioData: audioData,
             fileName: fileURL.lastPathComponent,
@@ -281,6 +299,7 @@ actor TranscriptionService {
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
+        request.timeoutInterval = 1800 // 30 minutes for large summaries
         request.setValue("Bearer \(Self.apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
@@ -291,7 +310,7 @@ actor TranscriptionService {
                 ["role": "user", "content": "Транскрипция:\n\(text)"]
             ],
             "temperature": 0.3,
-            "max_tokens": 2000
+            "max_tokens": 4000
         ]
 
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
@@ -305,17 +324,6 @@ actor TranscriptionService {
         guard (200...299).contains(httpResponse.statusCode) else {
             let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
             throw TranscriptionError.serverError(errorMessage)
-        }
-
-        // Parse ChatCompletion response
-        struct ChatResponse: Decodable {
-            struct Choice: Decodable {
-                struct Message: Decodable {
-                    let content: String
-                }
-                let message: Message
-            }
-            let choices: [Choice]
         }
 
         let result = try JSONDecoder().decode(ChatResponse.self, from: data)
@@ -338,6 +346,7 @@ actor TranscriptionService {
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
+        request.timeoutInterval = 120 // 2 minutes for title generation
         request.setValue("Bearer \(Self.apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
@@ -371,16 +380,6 @@ actor TranscriptionService {
         guard (200...299).contains(httpResponse.statusCode) else {
             let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
             throw TranscriptionError.serverError(errorMessage)
-        }
-
-        struct ChatResponse: Decodable {
-            struct Choice: Decodable {
-                struct Message: Decodable {
-                    let content: String
-                }
-                let message: Message
-            }
-            let choices: [Choice]
         }
 
         let result = try JSONDecoder().decode(ChatResponse.self, from: data)

@@ -37,9 +37,25 @@ final class Recording {
     /// JSON-encoded array of emails the summary was sent to
     var summarySentToEmails: String?
 
+    // MARK: - Confluence Export Tracking
+
+    /// ID страницы в Confluence (для обновления)
+    var confluencePageId: String?
+
+    /// URL страницы в Confluence (для открытия в браузере)
+    var confluencePageURL: String?
+
+    /// Когда саммари было экспортировано в Confluence
+    var confluenceExportedAt: Date?
+
     /// Whether this recording has a linked calendar meeting
     var hasLinkedMeeting: Bool {
         linkedMeetingId != nil
+    }
+
+    /// Whether this recording has been exported to Confluence
+    var isExportedToConfluence: Bool {
+        confluencePageId != nil
     }
 
     /// Attendee emails parsed from JSON
@@ -122,5 +138,19 @@ extension Recording {
         linkedMeetingSubject = nil
         linkedMeetingAttendeesJSON = nil
         linkedMeetingOrganizerEmail = nil
+    }
+
+    /// Mark as exported to Confluence
+    func markExportedToConfluence(pageId: String, pageURL: String?) {
+        confluencePageId = pageId
+        confluencePageURL = pageURL
+        confluenceExportedAt = Date()
+    }
+
+    /// Clear Confluence export data
+    func clearConfluenceExport() {
+        confluencePageId = nil
+        confluencePageURL = nil
+        confluenceExportedAt = nil
     }
 }

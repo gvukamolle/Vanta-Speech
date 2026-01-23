@@ -66,6 +66,9 @@ final class RealtimeTranscriptionManager: ObservableObject {
     /// URL всех обработанных чанков (для последующего мержа в один файл)
     private var processedChunkURLs: [URL] = []
 
+    /// Continuation для ожидания завершения всех чанков
+    private var completionContinuation: CheckedContinuation<Void, Never>?
+
     private struct ChunkItem: Identifiable {
         let id: UUID
         let url: URL
@@ -129,14 +132,28 @@ final class RealtimeTranscriptionManager: ObservableObject {
         status = .idle
         pendingChunksCount = 0
         isProcessing = false
+
+        // Resume continuation при reset чтобы избежать deadlock
+        if let continuation = completionContinuation {
+            completionContinuation = nil
+            continuation.resume()
+        }
+
         cleanupChunks()  // Очищаем временные файлы чанков
         debugLog("Reset", module: "RealtimeTranscriptionManager")
     }
 
     /// Ожидание завершения всех pending транскрипций
     func waitForCompletion() async {
-        while !chunkQueue.isEmpty || isProcessing {
-            try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+        // Если очередь пуста и ничего не обрабатывается - сразу возвращаемся
+        guard !chunkQueue.isEmpty || isProcessing else {
+            debugLog("All chunks already processed", module: "RealtimeTranscriptionManager")
+            return
+        }
+
+        // Ожидаем через continuation (без busy-wait)
+        await withCheckedContinuation { continuation in
+            self.completionContinuation = continuation
         }
         debugLog("All chunks processed", module: "RealtimeTranscriptionManager")
     }
@@ -186,6 +203,12 @@ final class RealtimeTranscriptionManager: ObservableObject {
                 processNextChunkIfNeeded()
             } else {
                 status = .idle
+
+                // Resume continuation если кто-то ожидает завершения
+                if let continuation = completionContinuation {
+                    completionContinuation = nil
+                    continuation.resume()
+                }
             }
         }
     }

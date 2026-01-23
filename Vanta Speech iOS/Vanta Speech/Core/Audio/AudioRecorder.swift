@@ -432,9 +432,13 @@ final class AudioRecorder: NSObject, ObservableObject {
 
         let totalDuration = recordingDuration
 
+        // Сохраняем URL последнего чанка до reset
+        var finalChunk: URL? = nil
+
         // Финализируем последний чанк если он достаточно длинный
         if let chunkURL = currentChunkURL, currentChunkDuration >= 2.0 {
             audioRecorder?.stop()
+            finalChunk = chunkURL
             debugLog("Final chunk saved: \(chunkURL.lastPathComponent), duration: \(currentChunkDuration)s", module: "AudioRecorder")
             onChunkReady?(chunkURL, currentChunkDuration)
         } else {
@@ -462,7 +466,7 @@ final class AudioRecorder: NSObject, ObservableObject {
 
         debugLog("Realtime recording stopped, total duration: \(totalDuration)s", module: "AudioRecorder")
 
-        return (currentChunkURL, totalDuration)
+        return (finalChunk, totalDuration)
     }
 
     /// Создать новый файл для чанка
@@ -573,6 +577,11 @@ final class AudioRecorder: NSObject, ObservableObject {
         guard let startTime = startTime, !isInterrupted else { return }
         recordingDuration = Date().timeIntervalSince(startTime)
 
+        // Обновляем длительность чанка на основе реального времени
+        if let chunkStart = chunkStartTime {
+            currentChunkDuration = Date().timeIntervalSince(chunkStart)
+        }
+
         audioRecorder?.updateMeters()
         guard let power = audioRecorder?.averagePower(forChannel: 0) else { return }
 
@@ -583,10 +592,11 @@ final class AudioRecorder: NSObject, ObservableObject {
 
         // VAD логика
         if normalizedPower < config.silenceThreshold {
-            // Тишина
+            // Тишина - увеличиваем счётчик
             silenceDuration += 0.1
 
-            // Проверяем условия для завершения чанка
+            // Проверяем условия для завершения чанка:
+            // достаточно тишины И достигнута минимальная длина чанка
             if silenceDuration >= config.silenceDurationThreshold,
                currentChunkDuration >= config.minimumChunkDuration {
                 finalizeCurrentChunk()
@@ -594,7 +604,6 @@ final class AudioRecorder: NSObject, ObservableObject {
         } else {
             // Речь - сбрасываем счётчик тишины
             silenceDuration = 0
-            currentChunkDuration += 0.1
         }
 
         // Принудительная отсечка по максимальной длине

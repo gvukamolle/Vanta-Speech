@@ -1,3 +1,4 @@
+import ActivityKit
 import Combine
 import Foundation
 import SwiftData
@@ -53,6 +54,8 @@ final class RecordingCoordinator: ObservableObject {
     }
 
     private var cancellables = Set<AnyCancellable>()
+    /// Отдельный Set для realtime subscriptions (очищается при остановке)
+    private var realtimeCancellables = Set<AnyCancellable>()
     private weak var modelContext: ModelContext?
     private var didCheckPendingShortcut = false
 
@@ -352,20 +355,25 @@ final class RecordingCoordinator: ObservableObject {
 
     /// Настройка обновлений от SpeechRecognizer
     private func setupRealtimeSpeechObservers() {
+        // Очищаем старые subscriptions перед добавлением новых
+        realtimeCancellables.removeAll()
+
         // Синхронизируем interimText с менеджером
         realtimeSpeechRecognizer.$interimText
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] text in
                 self?.realtimeManager?.currentInterimText = text
             }
-            .store(in: &cancellables)
+            .store(in: &realtimeCancellables)
 
         // Пробрасываем обновления от менеджера в координатор для обновления UI
         if let manager = realtimeManager {
             manager.objectWillChange
+                .receive(on: DispatchQueue.main)
                 .sink { [weak self] _ in
                     self?.objectWillChange.send()
                 }
-                .store(in: &cancellables)
+                .store(in: &realtimeCancellables)
         }
     }
 
@@ -428,6 +436,7 @@ final class RecordingCoordinator: ObservableObject {
 
         // Очищаем состояние
         realtimeSpeechRecognizer.onPhraseCompleted = nil
+        realtimeCancellables.removeAll()  // Очищаем realtime subscriptions
         isRealtimeMode = false
         currentPreset = nil
         currentRecordingId = nil
@@ -491,8 +500,16 @@ final class RecordingCoordinator: ObservableObject {
     func startTranscription() async {
         debugLog("startTranscription called", module: "RecordingCoordinator")
 
+        // Если pendingTranscription nil — пробуем восстановить из Live Activity и БД
+        if pendingTranscription == nil {
+            if let recovered = tryRecoverPendingTranscription() {
+                pendingTranscription = recovered
+                debugLog("Recovered pendingTranscription from Live Activity: \(recovered.recordingId)", module: "RecordingCoordinator")
+            }
+        }
+
         guard let pending = pendingTranscription else {
-            debugLog("No pending transcription - pendingTranscription is nil!", module: "RecordingCoordinator", level: .warning)
+            debugLog("No pending transcription - pendingTranscription is nil and recovery failed!", module: "RecordingCoordinator", level: .warning)
             return
         }
 
@@ -554,6 +571,51 @@ final class RecordingCoordinator: ObservableObject {
         await liveActivityManager.endActivityImmediately()
     }
 
+    /// Восстановить pendingTranscription из Live Activity и базы данных
+    /// Используется когда приложение было перезапущено, но Live Activity ещё активна
+    private func tryRecoverPendingTranscription() -> PendingTranscription? {
+        // Получаем текущую Live Activity
+        guard let activity = liveActivityManager.currentActivity else {
+            debugLog("Cannot recover: no Live Activity found", module: "RecordingCoordinator", level: .warning)
+            return nil
+        }
+
+        let recordingId = activity.attributes.recordingId
+        debugLog("Attempting to recover pendingTranscription, recordingId: \(recordingId)", module: "RecordingCoordinator")
+
+        // Ищем запись в базе данных
+        guard let context = modelContext else {
+            debugLog("Cannot recover: no modelContext", module: "RecordingCoordinator", level: .warning)
+            return nil
+        }
+
+        let descriptor = FetchDescriptor<Recording>(
+            predicate: #Predicate { $0.id == recordingId }
+        )
+
+        do {
+            let recordings = try context.fetch(descriptor)
+            if let recording = recordings.first,
+               let preset = recording.preset {
+                let url = URL(fileURLWithPath: recording.audioFileURL)
+                debugLog("Successfully recovered recording: \(recording.title)", module: "RecordingCoordinator")
+                return PendingTranscription(
+                    recordingId: recording.id,
+                    audioURL: url,
+                    duration: recording.duration,
+                    preset: preset
+                )
+            } else {
+                debugLog("Recording not found or has no preset", module: "RecordingCoordinator", level: .warning)
+            }
+        } catch {
+            debugLog("Failed to fetch recording: \(error)", module: "RecordingCoordinator", level: .error)
+            debugCaptureError(error, context: "Recovering pending transcription")
+        }
+
+        return nil
+    }
+
     // MARK: - Private Methods
 
     private func updateRecording(
@@ -589,6 +651,7 @@ final class RecordingCoordinator: ObservableObject {
     private func setupNotificationObservers() {
         // From Shortcut - start recording (внутренний notification, работает в одном процессе)
         NotificationCenter.default.publisher(for: .startRecordingFromShortcut)
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] notification in
                 guard let presetId = notification.userInfo?["presetId"] as? String,
                       let preset = RecordingPreset(rawValue: presetId) else { return }

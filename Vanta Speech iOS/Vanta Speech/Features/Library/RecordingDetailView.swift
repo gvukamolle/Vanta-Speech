@@ -22,6 +22,10 @@ struct RecordingDetailView: View {
     @State private var showEventPicker = false
     @State private var showMeetingDetail = false
 
+    // Title editing
+    @State private var showTitleEditor = false
+    @State private var editedTitle = ""
+
     // Summary email
     @StateObject private var summaryEmailManager = SummaryEmailManager.shared
     @State private var showSendSummarySuccess = false
@@ -90,6 +94,17 @@ struct RecordingDetailView: View {
         } message: {
             Text("Транскрипция и саммари будут удалены. После остановки записи аудио будет склеено в один файл и потребуется новая транскрипция.")
         }
+        .alert("Название записи", isPresented: $showTitleEditor) {
+            TextField("Название", text: $editedTitle)
+            Button("Отмена", role: .cancel) {}
+            Button("Сохранить") {
+                if !editedTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    recording.title = editedTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+            }
+        } message: {
+            Text("Введите новое название для записи")
+        }
         .sheet(isPresented: $showContinueRecordingSheet) {
             if let preset = coordinator.currentPreset {
                 ActiveRecordingSheet(preset: preset, onStop: stopContinueRecording)
@@ -103,10 +118,23 @@ struct RecordingDetailView: View {
 
     private var headerCard: some View {
         VStack(spacing: 8) {
-            Text(recording.title)
-                .font(.title2)
-                .fontWeight(.bold)
-                .multilineTextAlignment(.center)
+            Button {
+                editedTitle = recording.title
+                showTitleEditor = true
+            } label: {
+                HStack(spacing: 8) {
+                    Text(recording.title)
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.primary)
+
+                    Image(systemName: "pencil")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .buttonStyle(.plain)
 
             HStack(spacing: 24) {
                 Label(recording.formattedDate, systemImage: "calendar")
@@ -377,7 +405,8 @@ struct RecordingDetailView: View {
             ContentSheetView(
                 title: "Расшифровка",
                 icon: "text.bubble",
-                content: recording.transcriptionText ?? ""
+                content: recording.transcriptionText ?? "",
+                recording: recording
             )
         }
         .sheet(isPresented: $showSummarySheet) {
@@ -385,6 +414,7 @@ struct RecordingDetailView: View {
                 title: "Саммари",
                 icon: "doc.text",
                 content: recording.summaryText ?? "",
+                recording: recording,
                 onCheckboxToggle: { lineIndex in
                     guard let currentText = recording.summaryText else { return }
                     recording.summaryText = MarkdownCheckboxToggler.toggleCheckbox(in: currentText, at: lineIndex)
@@ -392,8 +422,52 @@ struct RecordingDetailView: View {
                 isEditable: true,
                 onContentChange: { newContent in
                     recording.summaryText = newContent
-                }
+                },
+                onRegenerateSummary: regenerateSummaryCallback
             )
+        }
+    }
+
+    // MARK: - Summary Regeneration
+
+    /// Callback for regenerating summary from transcription
+    private var regenerateSummaryCallback: (() async -> Void)? {
+        guard recording.transcriptionText != nil else { return nil }
+        return {
+            guard let transcription = self.recording.transcriptionText else { return }
+            let preset = self.recording.preset ?? .projectMeeting
+
+            debugLog("Starting summary regeneration (preset: \(preset.rawValue))", module: "RecordingDetail", level: .info)
+
+            // Устанавливаем флаг генерации (чтобы кнопка "Саммари" показывала состояние)
+            await MainActor.run {
+                self.recording.isSummaryGenerating = true
+            }
+
+            defer {
+                Task { @MainActor in
+                    self.recording.isSummaryGenerating = false
+                    debugLog("Summary regeneration finished", module: "RecordingDetail", level: .info)
+                }
+            }
+
+            do {
+                let service = TranscriptionService()
+                debugLog("Calling TranscriptionService.summarize...", module: "RecordingDetail", level: .info)
+
+                let (newSummary, _) = try await service.summarize(
+                    text: transcription,
+                    preset: preset
+                )
+
+                debugLog("Summary regenerated successfully (\(newSummary.count) chars)", module: "RecordingDetail", level: .info)
+
+                await MainActor.run {
+                    self.recording.summaryText = newSummary
+                }
+            } catch {
+                debugLog("Failed to regenerate summary: \(error)", module: "RecordingDetail", level: .error)
+            }
         }
     }
 
@@ -802,17 +876,26 @@ struct RecordingDetailView: View {
     }
 
     private func shareAudio() {
+        #if os(iOS)
         let url = URL(fileURLWithPath: recording.audioFileURL)
         let activityVC = UIActivityViewController(activityItems: [url], applicationActivities: nil)
 
         if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
            let window = windowScene.windows.first,
            let rootVC = window.rootViewController {
-            rootVC.present(activityVC, animated: true)
+            // Find the topmost presented view controller
+            var topController = rootVC
+            while let presented = topController.presentedViewController {
+                topController = presented
+            }
+            activityVC.popoverPresentationController?.sourceView = topController.view
+            topController.present(activityVC, animated: true)
         }
+        #endif
     }
 
     private func exportToFiles() {
+        #if os(iOS)
         let url = URL(fileURLWithPath: recording.audioFileURL)
         guard FileManager.default.fileExists(atPath: url.path) else {
             errorMessage = "Аудиофайл не найден"
@@ -825,8 +908,13 @@ struct RecordingDetailView: View {
         if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
            let window = windowScene.windows.first,
            let rootVC = window.rootViewController {
-            rootVC.present(picker, animated: true)
+            var topController = rootVC
+            while let presented = topController.presentedViewController {
+                topController = presented
+            }
+            topController.present(picker, animated: true)
         }
+        #endif
     }
 
     // MARK: - Continue Recording Actions
@@ -853,6 +941,11 @@ struct RecordingDetailView: View {
             if let updatedRecording = await coordinator.stopRecording() {
                 // Перезагружаем аудио с новым файлом
                 loadAudio()
+
+                // Автоматическая транскрипция если включена в настройках
+                if UserDefaults.standard.bool(forKey: "autoTranscribe") {
+                    await coordinator.startTranscription()
+                }
             }
         }
     }
@@ -864,24 +957,37 @@ struct ContentSheetView: View {
     let title: String
     let icon: String
     let content: String
+    /// Optional recording for export features (e.g., Confluence)
+    var recording: Recording?
     /// Optional callback when a checkbox is toggled. Parameter is the line number (0-indexed).
     var onCheckboxToggle: ((Int) -> Void)?
     /// Whether the content is editable (shows edit button)
     var isEditable: Bool = false
     /// Callback when content is changed (for editable mode)
     var onContentChange: ((String) -> Void)?
+    /// Callback for regenerating summary from transcription
+    var onRegenerateSummary: (() async -> Void)?
 
     @Environment(\.dismiss) private var dismiss
     @State private var isEditing = false
     @State private var editedContent = ""
+    @State private var showConfluenceExport = false
+    @State private var isRegenerating = false
+
+    // Confluence manager
+    @StateObject private var confluenceManager = ConfluenceManager.shared
 
     // Integration states from settings
-    @AppStorage("confluence_connected") private var confluenceConnected = false
     @AppStorage("notion_connected") private var notionConnected = false
     @AppStorage("googledocs_connected") private var googleDocsConnected = false
 
+    /// Confluence export available when manager is available and we have a recording with summary
+    private var canExportToConfluence: Bool {
+        confluenceManager.isAvailable && recording != nil && recording?.summaryText != nil
+    }
+
     private var hasAnyIntegration: Bool {
-        confluenceConnected || notionConnected || googleDocsConnected
+        canExportToConfluence || notionConnected || googleDocsConnected
     }
 
     var body: some View {
@@ -929,9 +1035,9 @@ struct ContentSheetView: View {
                     } else if !content.isEmpty {
                         Menu {
                             // Show connected integrations
-                            if confluenceConnected {
+                            if canExportToConfluence {
                                 Button {
-                                    exportToConfluence()
+                                    showConfluenceExport = true
                                 } label: {
                                     Label("Confluence", systemImage: "doc.text")
                                 }
@@ -988,11 +1094,35 @@ struct ContentSheetView: View {
                         }
                         .fontWeight(.semibold)
                     } else if !content.isEmpty && isEditable {
-                        Button("Редактировать") {
-                            // Strip markdown for cleaner editing experience
-                            editedContent = stripMarkdown(content)
-                            isEditing = true
+                        Menu {
+                            Button {
+                                // Strip markdown for cleaner editing experience
+                                editedContent = stripMarkdown(content)
+                                isEditing = true
+                            } label: {
+                                Label("Редактировать", systemImage: "pencil")
+                            }
+
+                            if onRegenerateSummary != nil {
+                                Button {
+                                    Task {
+                                        isRegenerating = true
+                                        await onRegenerateSummary?()
+                                        isRegenerating = false
+                                    }
+                                } label: {
+                                    Label("Сгенерировать заново", systemImage: "arrow.clockwise")
+                                }
+                                .disabled(isRegenerating)
+                            }
+                        } label: {
+                            if isRegenerating {
+                                ProgressView()
+                            } else {
+                                Text("Изменить")
+                            }
                         }
+                        .disabled(isRegenerating)
                     }
                 }
             }
@@ -1001,6 +1131,15 @@ struct ContentSheetView: View {
         .presentationDragIndicator(.visible)
         .onAppear {
             editedContent = content
+        }
+        .sheet(isPresented: $showConfluenceExport) {
+            if let recording = recording {
+                ConfluenceExportSheet(recording: recording) { url in
+                    if let url = url {
+                        debugLog("Exported to Confluence: \(url)", module: "ContentSheetView")
+                    }
+                }
+            }
         }
     }
 
@@ -1029,11 +1168,6 @@ struct ContentSheetView: View {
             topController.present(activityVC, animated: true)
         }
         #endif
-    }
-
-    private func exportToConfluence() {
-        // TODO: Implement Confluence export
-        debugLog("Export to Confluence: \(title)", module: "ContentSheetView")
     }
 
     private func exportToNotion() {

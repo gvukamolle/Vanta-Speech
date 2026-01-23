@@ -5,11 +5,11 @@ struct SettingsView: View {
     @AppStorage("appTheme") private var appTheme = AppTheme.system.rawValue
     @AppStorage("defaultRecordingMode") private var defaultRecordingMode = "standard"
 
-    // Integration states - persisted
-    @AppStorage("confluence_connected") private var confluenceConnected = false
-
     // Preset settings
     @StateObject private var presetSettings = PresetSettings.shared
+
+    // Confluence manager
+    @StateObject private var confluenceManager = ConfluenceManager.shared
 
     // Auth manager
     @StateObject private var authManager = AuthenticationManager.shared
@@ -123,17 +123,14 @@ struct SettingsView: View {
                         )
                     }
 
-                    // Confluence (placeholder)
+                    // Confluence
                     NavigationLink {
-                        IntegrationSettingsView(
-                            service: "Confluence",
-                            isConnected: $confluenceConnected
-                        )
+                        ConfluenceSettingsView()
                     } label: {
                         IntegrationRow(
                             name: "Confluence",
                             icon: "doc.text",
-                            isConnected: confluenceConnected
+                            isConnected: confluenceManager.isAvailable
                         )
                     }
                 }

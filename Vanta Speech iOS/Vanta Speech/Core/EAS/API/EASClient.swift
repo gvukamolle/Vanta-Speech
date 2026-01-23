@@ -1,6 +1,7 @@
 import Foundation
 import Network
 import UIKit
+import os
 
 /// HTTP client for Exchange ActiveSync protocol
 final class EASClient {
@@ -12,7 +13,13 @@ final class EASClient {
     private let networkMonitor: NWPathMonitor
     private let monitorQueue = DispatchQueue(label: "com.vantaspeech.eas.network")
 
-    private var isNetworkAvailable = true
+    /// Thread-safe access to network availability status
+    private let networkAvailableLock = OSAllocatedUnfairLock(initialState: true)
+
+    private var isNetworkAvailable: Bool {
+        get { networkAvailableLock.withLock { $0 } }
+        set { networkAvailableLock.withLock { $0 = newValue } }
+    }
 
     /// Use plain XML instead of WBXML (most servers require WBXML)
     var usePlainXML = false
