@@ -5,6 +5,7 @@ struct RecordingDetailView: View {
     @Bindable var recording: Recording
     /// Available events for linking (optional, for DayRecordingsSheet context)
     var availableEventsForLinking: [EASCalendarEvent] = []
+    @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var coordinator: RecordingCoordinator
     @Environment(\.dismiss) private var dismiss
     @StateObject private var player = AudioPlayer()
@@ -12,6 +13,7 @@ struct RecordingDetailView: View {
     @State private var isTranscribing = false
     @State private var isGeneratingSummary = false
     @State private var summaryError: String? = nil
+    @State private var transcriptionTask: Task<Void, Never>? = nil
     @State private var showError = false
     @State private var errorMessage = ""
     @State private var showTranscriptionSheet = false
@@ -295,26 +297,42 @@ struct RecordingDetailView: View {
     // MARK: - Transcribe Button
 
     private var transcribeButton: some View {
-        Button {
-            transcribeRecording()
-        } label: {
-            HStack {
-                if isTranscribing {
-                    ProgressView()
-                        .tint(.primary)
-                } else {
-                    Image(systemName: "wand.and.stars")
+        VStack(spacing: 12) {
+            Button {
+                transcribeRecording()
+            } label: {
+                HStack {
+                    if isAnyTranscribing {
+                        ProgressView()
+                            .tint(.primary)
+                    } else {
+                        Image(systemName: "wand.and.stars")
+                    }
+                    Text(isAnyTranscribing ? "Транскрибирую..." : "Транскрибировать")
+                        .fontWeight(.semibold)
                 }
-                Text(isTranscribing ? "Транскрибирую..." : "Транскрибировать")
-                    .fontWeight(.semibold)
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+                .vantaGlassProminent(cornerRadius: 20, tintOpacity: 0.15)
             }
-            .foregroundStyle(.primary)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
-            .vantaGlassProminent(cornerRadius: 20, tintOpacity: 0.15)
+            .buttonStyle(.plain)
+            .disabled(isAnyTranscribing)
+
+            if canCancelTranscription {
+                Button {
+                    cancelTranscription()
+                } label: {
+                    Label("Отменить транскрипцию", systemImage: "xmark.circle")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                }
+                .buttonStyle(.bordered)
+                .tint(.red)
+            }
         }
-        .buttonStyle(.plain)
-        .disabled(isTranscribing)
     }
 
     // MARK: - Content Section
@@ -749,11 +767,18 @@ struct RecordingDetailView: View {
     }
 
     private func transcribeRecording() {
+        if isAnyTranscribing {
+            return
+        }
+
+        transcriptionTask?.cancel()
+        transcriptionTask = nil
         isTranscribing = true
         recording.isUploading = true
+        saveRecordingState()
         summaryError = nil
 
-        Task {
+        let task = Task {
             do {
                 let service = TranscriptionService()
                 let audioURL = URL(fileURLWithPath: recording.audioFileURL)
@@ -769,16 +794,18 @@ struct RecordingDetailView: View {
                             // Show transcription immediately
                             recording.transcriptionText = text
                             recording.isTranscribed = true
-                            isTranscribing = false
+                            saveRecordingState()
 
                         case .generatingSummary:
                             isGeneratingSummary = true
                             recording.isSummaryGenerating = true
+                            saveRecordingState()
 
                         case .summaryCompleted(let summary):
                             recording.summaryText = summary
                             isGeneratingSummary = false
                             recording.isSummaryGenerating = false
+                            saveRecordingState()
 
                             // Auto-send summary to meeting participants if linked
                             Task {
@@ -791,6 +818,8 @@ struct RecordingDetailView: View {
                                 recording.title = generatedTitle
                             }
                             recording.isUploading = false
+                            isTranscribing = false
+                            saveRecordingState()
 
                         case .error(let error):
                             // If transcription already exists, this is a summary error
@@ -805,6 +834,18 @@ struct RecordingDetailView: View {
                         }
                     }
                 }
+                await MainActor.run {
+                    transcriptionTask = nil
+                }
+            } catch is CancellationError {
+                await MainActor.run {
+                    recording.isUploading = false
+                    isTranscribing = false
+                    isGeneratingSummary = false
+                    recording.isSummaryGenerating = false
+                    saveRecordingState()
+                    transcriptionTask = nil
+                }
             } catch {
                 await MainActor.run {
                     errorMessage = error.localizedDescription
@@ -813,9 +854,50 @@ struct RecordingDetailView: View {
                     isTranscribing = false
                     isGeneratingSummary = false
                     recording.isSummaryGenerating = false
+                    saveRecordingState()
+                    transcriptionTask = nil
                     debugCaptureError(error, context: "Transcription in RecordingDetailView")
                 }
             }
+        }
+        transcriptionTask = task
+    }
+
+    private func cancelTranscription() {
+        if isCoordinatorTranscribing {
+            Task {
+                await coordinator.cancelTranscription()
+            }
+            return
+        }
+
+        transcriptionTask?.cancel()
+        transcriptionTask = nil
+        recording.isUploading = false
+        isTranscribing = false
+        isGeneratingSummary = false
+        recording.isSummaryGenerating = false
+        summaryError = nil
+        saveRecordingState()
+    }
+
+    private var isCoordinatorTranscribing: Bool {
+        coordinator.isTranscribing && coordinator.pendingTranscription?.recordingId == recording.id
+    }
+
+    private var isAnyTranscribing: Bool {
+        recording.isUploading || transcriptionTask != nil || isCoordinatorTranscribing
+    }
+
+    private var canCancelTranscription: Bool {
+        transcriptionTask != nil || isCoordinatorTranscribing
+    }
+
+    private func saveRecordingState() {
+        do {
+            try modelContext.save()
+        } catch {
+            debugCaptureError(error, context: "Saving recording state in RecordingDetailView")
         }
     }
 

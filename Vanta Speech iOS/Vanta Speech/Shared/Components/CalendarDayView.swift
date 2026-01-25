@@ -11,9 +11,9 @@ struct CalendarDayView: View {
 
     private let calendar = Calendar.current
 
-    /// Размер ячейки: 48pt на iPad, 40pt на iPhone
+    /// Размер ячейки: 40pt на iPad, 36pt на iPhone (уменьшено для лучшей компоновки)
     private var cellSize: CGFloat {
-        horizontalSizeClass == .regular ? 48 : 40
+        horizontalSizeClass == .regular ? 40 : 36
     }
 
     var body: some View {
@@ -36,7 +36,7 @@ struct CalendarDayView: View {
 
                 if let day = day {
                     Text("\(calendar.component(.day, from: day))")
-                        .font(.system(horizontalSizeClass == .regular ? .title3 : .body, weight: hasRecordings || isSelected ? .semibold : .regular))
+                        .font(.system(horizontalSizeClass == .regular ? .body : .caption, weight: hasRecordings || isSelected ? .semibold : .regular))
                         .foregroundStyle(textColor)
                 }
             }

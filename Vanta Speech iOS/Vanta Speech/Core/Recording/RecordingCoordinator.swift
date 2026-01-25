@@ -58,6 +58,7 @@ final class RecordingCoordinator: ObservableObject {
     private var realtimeCancellables = Set<AnyCancellable>()
     private weak var modelContext: ModelContext?
     private var didCheckPendingShortcut = false
+    private var transcriptionTask: Task<Void, Never>?
 
     /// Данные для продолжения записи (склейки)
     private var continuationData: ContinuationData?
@@ -142,7 +143,12 @@ final class RecordingCoordinator: ObservableObject {
         recording.transcriptionText = nil
         recording.summaryText = nil
         recording.isTranscribed = false
-        try? modelContext?.save()
+        do {
+            try modelContext?.save()
+        } catch {
+            debugLog("Failed to save recording reset state: \(error)", module: "RecordingCoordinator", level: .error)
+            debugCaptureError(error, context: "Resetting recording before continuation")
+        }
 
         // Устанавливаем состояние
         currentPreset = preset
@@ -221,14 +227,18 @@ final class RecordingCoordinator: ObservableObject {
             // Если это продолжение записи - склеиваем файлы
             if let continuation = continuationData, isContinuingRecording {
                 do {
-                    let mergeResult = try await audioRecorder.mergeAudioFiles(
-                        firstURL: continuation.originalAudioURL,
-                        secondURL: data.url,
-                        deleteSecond: true
-                    )
-                    finalURL = mergeResult.url
-                    finalDuration = mergeResult.duration
-                    debugLog("Audio files merged, total duration: \(finalDuration)s", module: "RecordingCoordinator")
+                    if continuation.originalAudioURL == data.url {
+                        debugLog("Skipping merge: original and new URLs are identical", module: "RecordingCoordinator", level: .error)
+                    } else {
+                        let mergeResult = try await audioRecorder.mergeAudioFiles(
+                            firstURL: continuation.originalAudioURL,
+                            secondURL: data.url,
+                            deleteSecond: true
+                        )
+                        finalURL = mergeResult.url
+                        finalDuration = mergeResult.duration
+                        debugLog("Audio files merged, total duration: \(finalDuration)s", module: "RecordingCoordinator")
+                    }
                 } catch {
                     debugLog("Failed to merge audio: \(error)", module: "RecordingCoordinator", level: .error)
                     debugCaptureError(error, context: "Merging audio files")
@@ -287,7 +297,12 @@ final class RecordingCoordinator: ObservableObject {
             )
 
             modelContext?.insert(recording)
-            try? modelContext?.save()
+            do {
+                try modelContext?.save()
+            } catch {
+                debugLog("Failed to save recording: \(error)", module: "RecordingCoordinator", level: .error)
+                debugCaptureError(error, context: "Saving new recording")
+            }
 
             // Сохраняем для возможной транскрипции
             pendingTranscription = PendingTranscription(
@@ -498,6 +513,34 @@ final class RecordingCoordinator: ObservableObject {
 
     /// Начать транскрипцию pending записи
     func startTranscription() async {
+        if transcriptionTask != nil {
+            debugLog("Transcription already in progress", module: "RecordingCoordinator", level: .info)
+            return
+        }
+
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await self.runTranscription()
+        }
+        transcriptionTask = task
+        await task.value
+        transcriptionTask = nil
+    }
+
+    /// Отменить текущую транскрипцию
+    func cancelTranscription() async {
+        if let pending = pendingTranscription {
+            updateRecordingUploadingState(recordingId: pending.recordingId, isUploading: false)
+        }
+        transcriptionTask?.cancel()
+        transcriptionTask = nil
+        pendingTranscription = nil
+        isTranscribing = false
+        await liveActivityManager.endActivityImmediately()
+        debugLog("Transcription cancelled", module: "RecordingCoordinator")
+    }
+
+    private func runTranscription() async {
         debugLog("startTranscription called", module: "RecordingCoordinator")
 
         // Если pendingTranscription nil — пробуем восстановить из Live Activity и БД
@@ -512,6 +555,8 @@ final class RecordingCoordinator: ObservableObject {
             debugLog("No pending transcription - pendingTranscription is nil and recovery failed!", module: "RecordingCoordinator", level: .warning)
             return
         }
+
+        updateRecordingUploadingState(recordingId: pending.recordingId, isUploading: true)
 
         debugLog("Starting transcription for recording: \(pending.recordingId)", module: "RecordingCoordinator")
         debugLog("Audio URL: \(pending.audioURL)", module: "RecordingCoordinator")
@@ -531,13 +576,16 @@ final class RecordingCoordinator: ObservableObject {
                     await liveActivityManager.updateTranscribing(progress: Double(i) * 0.1)
                 }
             }
+            defer {
+                progressTask.cancel()
+            }
 
             let result = try await service.transcribe(
                 audioFileURL: pending.audioURL,
                 preset: pending.preset
             )
 
-            progressTask.cancel()
+            try Task.checkCancellation()
 
             // Обновляем запись в SwiftData
             await updateRecording(
@@ -555,11 +603,18 @@ final class RecordingCoordinator: ObservableObject {
 
             debugLog("Transcription completed successfully", module: "RecordingCoordinator")
 
+        } catch is CancellationError {
+            debugLog("Transcription cancelled", module: "RecordingCoordinator", level: .warning)
+            await liveActivityManager.endActivityImmediately()
+            updateRecordingUploadingState(recordingId: pending.recordingId, isUploading: false)
+            pendingTranscription = nil
+            isTranscribing = false
         } catch {
             debugLog("Transcription failed: \(error)", module: "RecordingCoordinator", level: .error)
             debugCaptureError(error, context: "Transcription")
             // Завершаем Live Activity с ошибкой
             await liveActivityManager.endActivityImmediately()
+            updateRecordingUploadingState(recordingId: pending.recordingId, isUploading: false)
             pendingTranscription = nil
             isTranscribing = false
         }
@@ -567,6 +622,9 @@ final class RecordingCoordinator: ObservableObject {
 
     /// Отменить pending транскрипцию и закрыть Live Activity
     func cancelPendingTranscription() async {
+        if let pending = pendingTranscription {
+            updateRecordingUploadingState(recordingId: pending.recordingId, isUploading: false)
+        }
         pendingTranscription = nil
         await liveActivityManager.endActivityImmediately()
     }
@@ -645,6 +703,28 @@ final class RecordingCoordinator: ObservableObject {
         } catch {
             debugLog("Failed to update recording: \(error)", module: "RecordingCoordinator", level: .error)
             debugCaptureError(error, context: "Updating recording in database")
+        }
+    }
+
+    private func updateRecordingUploadingState(recordingId: UUID, isUploading: Bool) {
+        guard let context = modelContext else { return }
+
+        let descriptor = FetchDescriptor<Recording>(
+            predicate: #Predicate { $0.id == recordingId }
+        )
+
+        do {
+            let recordings = try context.fetch(descriptor)
+            if let recording = recordings.first {
+                recording.isUploading = isUploading
+                if !isUploading {
+                    recording.isSummaryGenerating = false
+                }
+                try context.save()
+            }
+        } catch {
+            debugLog("Failed to update upload state: \(error)", module: "RecordingCoordinator", level: .error)
+            debugCaptureError(error, context: "Updating recording upload state")
         }
     }
 

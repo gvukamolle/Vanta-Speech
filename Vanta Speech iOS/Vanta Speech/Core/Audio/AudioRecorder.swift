@@ -709,8 +709,25 @@ extension AudioRecorder {
         }
 
         // Удаляем оригинальный первый файл и переименовываем temp в него
-        try? fileManager.removeItem(at: firstURL)
-        try fileManager.moveItem(at: tempURL, to: firstURL)
+        let backupURL = firstURL.appendingPathExtension("backup")
+        if fileManager.fileExists(atPath: backupURL.path) {
+            try? fileManager.removeItem(at: backupURL)
+        }
+
+        do {
+            if fileManager.fileExists(atPath: firstURL.path) {
+                try fileManager.moveItem(at: firstURL, to: backupURL)
+            }
+            try fileManager.moveItem(at: tempURL, to: firstURL)
+            if fileManager.fileExists(atPath: backupURL.path) {
+                try? fileManager.removeItem(at: backupURL)
+            }
+        } catch {
+            if fileManager.fileExists(atPath: backupURL.path) {
+                try? fileManager.moveItem(at: backupURL, to: firstURL)
+            }
+            throw error
+        }
 
         // Удаляем второй файл если нужно
         if deleteSecond {

@@ -69,6 +69,10 @@ final class RealtimeTranscriptionManager: ObservableObject {
     /// Continuation для ожидания завершения всех чанков
     private var completionContinuation: CheckedContinuation<Void, Never>?
 
+    init() {
+        cleanupOrphanedChunks()
+    }
+
     private struct ChunkItem: Identifiable {
         let id: UUID
         let url: URL
@@ -278,5 +282,36 @@ final class RealtimeTranscriptionManager: ObservableObject {
     private func capitalizeFirstLetter(_ text: String) -> String {
         guard !text.isEmpty else { return text }
         return text.prefix(1).uppercased() + text.dropFirst()
+    }
+
+    private func cleanupOrphanedChunks() {
+        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let chunksPath = documentsPath
+            .appendingPathComponent("Recordings", isDirectory: true)
+            .appendingPathComponent("Chunks", isDirectory: true)
+
+        guard let contents = try? FileManager.default.contentsOfDirectory(
+            at: chunksPath,
+            includingPropertiesForKeys: [.creationDateKey]
+        ) else {
+            return
+        }
+
+        let cutoffDate = Date().addingTimeInterval(-3600)
+        var removedCount = 0
+
+        for file in contents {
+            guard let values = try? file.resourceValues(forKeys: [.creationDateKey]),
+                  let creationDate = values.creationDate else { continue }
+            guard creationDate < cutoffDate else { continue }
+
+            if (try? FileManager.default.removeItem(at: file)) != nil {
+                removedCount += 1
+            }
+        }
+
+        if removedCount > 0 {
+            debugLog("Cleaned up \(removedCount) orphaned chunk files", module: "RealtimeTranscriptionManager")
+        }
     }
 }

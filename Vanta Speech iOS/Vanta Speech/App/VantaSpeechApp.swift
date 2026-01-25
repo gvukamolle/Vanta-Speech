@@ -23,7 +23,7 @@ struct VantaSpeechApp: App {
             queue: .main
         ) { _ in
             // Останавливаем запись и завершаем Live Activity при закрытии приложения
-            Task { @MainActor in
+            Task.detached { @MainActor in
                 _ = await RecordingCoordinator.shared.stopRecording()
                 await LiveActivityManager.shared.endActivityImmediately()
             }

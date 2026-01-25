@@ -109,17 +109,25 @@ actor TranscriptionService {
             )
         }
 
+        try Task.checkCancellation()
+
         // Step 1: Transcribe audio using Whisper
         let transcription = try await transcribeAudio(fileURL: audioFileURL)
 
+        try Task.checkCancellation()
+
         // Step 2: Generate summary using LLM with preset-specific prompt
         let summary = try? await generateSummary(text: transcription, preset: preset)
+
+        try Task.checkCancellation()
 
         // Step 3: Generate title from summary (if summary exists)
         var generatedTitle: String? = nil
         if let summaryText = summary {
             generatedTitle = try? await generateTitle(from: summaryText)
         }
+
+        try Task.checkCancellation()
 
         return TranscriptionResult(transcription: transcription, summary: summary, generatedTitle: generatedTitle)
     }
@@ -165,27 +173,36 @@ actor TranscriptionService {
 
         // Step 1: Notify transcription starting
         await onProgress(.transcribing)
+        try Task.checkCancellation()
 
         // Step 2: Transcribe audio using Whisper
         let transcription: String
         do {
             transcription = try await transcribeAudio(fileURL: audioFileURL)
+            try Task.checkCancellation()
             await onProgress(.transcriptionCompleted(transcription))
         } catch {
-            await onProgress(.error(error))
+            if !(error is CancellationError) {
+                await onProgress(.error(error))
+            }
             throw error
         }
 
         // Step 3: Generate summary using LLM with preset-specific prompt
         await onProgress(.generatingSummary)
+        try Task.checkCancellation()
         var summary: String? = nil
         do {
             summary = try await generateSummary(text: transcription, preset: preset)
+            try Task.checkCancellation()
             if let summaryText = summary {
                 await onProgress(.summaryCompleted(summaryText))
             }
         } catch {
             // Summary failed but transcription succeeded - don't throw, just continue
+            if error is CancellationError {
+                throw error
+            }
             await onProgress(.error(error))
         }
 
@@ -193,8 +210,11 @@ actor TranscriptionService {
         var generatedTitle: String? = nil
         if let summaryText = summary {
             await onProgress(.generatingTitle)
+            try Task.checkCancellation()
             generatedTitle = try? await generateTitle(from: summaryText)
         }
+
+        try Task.checkCancellation()
 
         let result = TranscriptionResult(transcription: transcription, summary: summary, generatedTitle: generatedTitle)
         await onProgress(.completed(result))

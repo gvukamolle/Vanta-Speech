@@ -74,3 +74,6 @@ fastlane/test_output
 # Sensitive configuration (API keys, server URLs)
 **/Env.swift
 Env.swift
+
+.gemini/
+gha-creds-*.json

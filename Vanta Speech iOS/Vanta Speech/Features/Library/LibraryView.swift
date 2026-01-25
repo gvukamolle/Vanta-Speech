@@ -76,9 +76,11 @@ struct LibraryView: View {
                 displayedMonth: $displayedMonth,
                 recordingDates: recordingDates
             )
-            .padding()
+            .padding(.horizontal)
+            .padding(.top, 8)
         }
         .vantaGlassCard(cornerRadius: 24, shadowRadius: 0, tintOpacity: 0.15)
+        .frame(height: 400) // Ограничиваем высоту календаря
     }
 
     // MARK: - Stats View

@@ -8,6 +8,7 @@ final class KeychainManager {
     private let service = "com.vanta.speech"
     private let sessionKey = "user_session"
     private let easCredentialsKey = "eas_credentials"
+    private let easPasswordKey = "eas_password"
     private let easDeviceIdKey = "eas_device_id"
     private let easSyncStateKey = "eas_sync_state"
     private let easCachedEventsKey = "eas_cached_events"
@@ -34,19 +35,47 @@ final class KeychainManager {
 
     /// Save EAS credentials for Exchange ActiveSync authentication
     func saveEASCredentials(_ credentials: EASCredentials) throws {
-        let data = try JSONEncoder().encode(credentials)
+        try saveEASPassword(credentials.password)
+
+        let storage = EASCredentialsStorage(
+            serverURL: credentials.serverURL,
+            username: credentials.username,
+            deviceId: credentials.deviceId
+        )
+        let data = try JSONEncoder().encode(storage)
         try save(data: data, forKey: easCredentialsKey)
     }
 
     /// Load saved EAS credentials
     func loadEASCredentials() -> EASCredentials? {
         guard let data = load(forKey: easCredentialsKey) else { return nil }
-        return try? JSONDecoder().decode(EASCredentials.self, from: data)
+
+        if let legacyCredentials = try? JSONDecoder().decode(EASCredentials.self, from: data) {
+            // Migrate legacy storage (password embedded) to split storage
+            try? saveEASCredentials(legacyCredentials)
+            return legacyCredentials
+        }
+
+        guard let storage = try? JSONDecoder().decode(EASCredentialsStorage.self, from: data) else {
+            return nil
+        }
+
+        guard let password = loadEASPassword() else {
+            return nil
+        }
+
+        return EASCredentials(
+            serverURL: storage.serverURL,
+            username: storage.username,
+            password: password,
+            deviceId: storage.deviceId
+        )
     }
 
     /// Delete EAS credentials
     func deleteEASCredentials() {
         delete(forKey: easCredentialsKey)
+        deleteEASPassword()
     }
 
     /// Check if EAS credentials are stored
@@ -128,9 +157,36 @@ final class KeychainManager {
     /// Clear all EAS data (credentials, device ID, sync state, cached events)
     func clearAllEASData() {
         delete(forKey: easCredentialsKey)
+        deleteEASPassword()
         delete(forKey: easDeviceIdKey)
         delete(forKey: easSyncStateKey)
         delete(forKey: easCachedEventsKey)
+    }
+
+    // MARK: - EAS Password Storage
+
+    private func saveEASPassword(_ password: String) throws {
+        guard let data = password.data(using: .utf8) else {
+            throw KeychainError.encodingFailed
+        }
+        try save(data: data, forKey: easPasswordKey)
+    }
+
+    private func loadEASPassword() -> String? {
+        guard let data = load(forKey: easPasswordKey) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    private func deleteEASPassword() {
+        delete(forKey: easPasswordKey)
+    }
+
+    // MARK: - Internal Storage
+
+    private struct EASCredentialsStorage: Codable {
+        let serverURL: String
+        let username: String
+        let deviceId: String
     }
 
     // MARK: - Generic Keychain Operations

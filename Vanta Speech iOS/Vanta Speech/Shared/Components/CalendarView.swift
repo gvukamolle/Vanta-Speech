@@ -26,7 +26,7 @@ struct CalendarView: View {
                 Image(systemName: "chevron.left")
                     .font(.body.weight(.medium))
                     .foregroundStyle(.primary)
-                    .frame(width: 44, height: 44)
+                    .frame(width: 36, height: 36)
             }
 
             Spacer()
@@ -40,7 +40,7 @@ struct CalendarView: View {
                 Image(systemName: "chevron.right")
                     .font(.body.weight(.medium))
                     .foregroundStyle(.primary)
-                    .frame(width: 44, height: 44)
+                    .frame(width: 36, height: 36)
             }
         }
     }
@@ -62,7 +62,7 @@ struct CalendarView: View {
     // MARK: - Days Grid
 
     private var daysGrid: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 8) {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 4) {
             ForEach(daysInMonth, id: \.self) { day in
                 CalendarDayView(
                     day: day,
@@ -77,6 +77,7 @@ struct CalendarView: View {
                 )
             }
         }
+        .frame(height: 280) // Уменьшаем высоту сетки дней
     }
 
     // MARK: - Helpers
