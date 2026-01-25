@@ -229,6 +229,15 @@ struct ConfluenceExportSheet: View {
             // Сохраняем информацию об экспорте в Recording
             let webURL = page.webURL?.absoluteString ?? page._links?.webui
             recording.markExportedToConfluence(pageId: page.id, pageURL: webURL)
+            
+            // Сохраняем успешно использованные параметры как дефолтные для будущих экспортов
+            if let spaceKey = selectedSpaceKey {
+                manager.saveDefaults(
+                    spaceKey: spaceKey,
+                    parentPageId: selectedParentPageId,
+                    parentPageTitle: selectedParentPageTitle
+                )
+            }
 
             isExporting = false
             dismiss()

@@ -131,16 +131,34 @@ struct iPadMainView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            HStack(alignment: .top, spacing: 0) {
-                // ЛЕВАЯ КОЛОНКА - Календарь и записи
-                leftColumn
-                    .frame(width: geometry.size.width * 0.5, alignment: .top)
+            ZStack(alignment: .bottom) {
+                ScrollView {
+                    HStack(alignment: .top, spacing: 0) {
+                        // ЛЕВАЯ КОЛОНКА - Календарь и записи
+                        leftColumn
+                            .frame(width: geometry.size.width * 0.5, alignment: .top)
 
-                Divider()
+                        Divider()
 
-                // ПРАВАЯ КОЛОНКА - Встречи и запись
-                rightColumn
-                    .frame(width: geometry.size.width * 0.5, alignment: .top)
+                        // ПРАВАЯ КОЛОНКА - Встречи и запись
+                        rightColumn
+                            .frame(width: geometry.size.width * 0.5, alignment: .top)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .top)
+                }
+                .refreshable {
+                    if calendarManager.isConnected {
+                        await calendarManager.forceFullSync()
+                    }
+                }
+
+                // Floating кнопка записи (над правой колонкой)
+                HStack(spacing: 0) {
+                    Spacer()
+                    microphoneButton
+                        .frame(width: geometry.size.width * 0.5, alignment: .center)
+                        .padding(.bottom, 24)
+                }
             }
         }
         .background(Color(.systemGroupedBackground))
@@ -239,127 +257,125 @@ struct iPadMainView: View {
     // MARK: - Left Column (Calendar + Stats + Recordings)
 
     private var leftColumn: some View {
-        ScrollView {
+        VStack(spacing: 0) {
+            // Календарь
             VStack(spacing: 0) {
-                // Календарь
-                VStack(spacing: 0) {
-                    CalendarView(
-                        selectedDate: $selectedDate,
-                        displayedMonth: $displayedMonth,
-                        recordingDates: recordingDates
+                CalendarView(
+                    selectedDate: $selectedDate,
+                    displayedMonth: $displayedMonth,
+                    recordingDates: recordingDates
+                )
+                .padding(.horizontal)
+                .padding(.top, 8)
+            }
+            .vantaGlassCard(cornerRadius: 20, shadowRadius: 0, tintOpacity: 0.15)
+            .padding()
+            .frame(height: 400) // Ограничиваем высоту календаря
+
+            // Статистика (2x2 сетка)
+            VStack(spacing: 12) {
+                HStack(spacing: 12) {
+                    StatCard(
+                        title: "Всего",
+                        value: "\(allRecordings.count)",
+                        icon: "waveform",
+                        color: .pinkVibrant
                     )
-                    .padding(.horizontal)
-                    .padding(.top, 8)
+
+                    StatCard(
+                        title: "За месяц",
+                        value: "\(recordingsCountForMonth)",
+                        icon: "calendar",
+                        color: .blueVibrant
+                    )
                 }
-                .vantaGlassCard(cornerRadius: 20, shadowRadius: 0, tintOpacity: 0.15)
-                .padding()
-                .frame(height: 400) // Ограничиваем высоту календаря
 
-                // Статистика (2x2 сетка)
-                VStack(spacing: 12) {
-                    HStack(spacing: 12) {
-                        StatCard(
-                            title: "Всего",
-                            value: "\(allRecordings.count)",
-                            icon: "waveform",
-                            color: .pinkVibrant
-                        )
+                HStack(spacing: 12) {
+                    StatCard(
+                        title: "Сегодня",
+                        value: "\(todayMeetings.count)",
+                        icon: "calendar.badge.clock",
+                        color: .green
+                    )
 
-                        StatCard(
-                            title: "За месяц",
-                            value: "\(recordingsCountForMonth)",
-                            icon: "calendar",
-                            color: .blueVibrant
-                        )
+                    StatCard(
+                        title: "На неделе",
+                        value: "\(weekMeetings.count)",
+                        icon: "calendar",
+                        color: .blue
+                    )
+                }
+            }
+            .padding(.horizontal)
+
+            Divider()
+                .padding(.top, 16)
+
+            // Заголовок списка
+            HStack {
+                Text(listTitle)
+                    .font(.headline)
+
+                Spacer()
+
+                if selectedDate != nil {
+                    Button("Сбросить") {
+                        selectedDate = nil
                     }
+                    .font(.subheadline)
+                }
 
-                    HStack(spacing: 12) {
-                        StatCard(
-                            title: "Сегодня",
-                            value: "\(todayMeetings.count)",
-                            icon: "calendar.badge.clock",
-                            color: .green
-                        )
+                Text("\(displayedRecordings.count)")
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color(.systemGray5))
+                    .clipShape(Capsule())
+            }
+            .padding()
+            .padding(.top, 8)
 
-                        StatCard(
-                            title: "На неделе",
-                            value: "\(weekMeetings.count)",
-                            icon: "calendar",
-                            color: .blue
+            // Записи
+            if displayedRecordings.isEmpty {
+                emptyRecordingsView
+            } else {
+                LazyVStack(spacing: 12) {
+                    ForEach(displayedRecordings) { recording in
+                        RecordingCard(recording: recording) {
+                            selectedRecording = recording
+                        }
+                        .background(
+                            RoundedRectangle(cornerRadius: 24)
+                                .fill(selectedRecording?.id == recording.id ? Color.pinkVibrant.opacity(0.1) : Color.clear)
                         )
+                        .contextMenu {
+                            Button {
+                                selectedRecording = recording
+                            } label: {
+                                Label("Открыть", systemImage: "arrow.right.circle")
+                            }
+
+                            if onOpenInNewWindow != nil {
+                                Button {
+                                    onOpenInNewWindow?(recording)
+                                } label: {
+                                    Label("Открыть в новом окне", systemImage: "macwindow.badge.plus")
+                                }
+                            }
+
+                            Divider()
+
+                            Button(role: .destructive) {
+                                deleteRecording(recording)
+                            } label: {
+                                Label("Удалить", systemImage: "trash")
+                            }
+                        }
                     }
                 }
                 .padding(.horizontal)
-
-                Divider()
-                    .padding(.top, 16)
-
-                // Заголовок списка
-                HStack {
-                    Text(listTitle)
-                        .font(.headline)
-
-                    Spacer()
-
-                    if selectedDate != nil {
-                        Button("Сбросить") {
-                            selectedDate = nil
-                        }
-                        .font(.subheadline)
-                    }
-
-                    Text("\(displayedRecordings.count)")
-                        .font(.caption)
-                        .fontWeight(.medium)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color(.systemGray5))
-                        .clipShape(Capsule())
-                }
-                .padding()
-                .padding(.top, 8)
-
-                // Записи
-                if displayedRecordings.isEmpty {
-                    emptyRecordingsView
-                } else {
-                    LazyVStack(spacing: 12) {
-                        ForEach(displayedRecordings) { recording in
-                            RecordingCard(recording: recording) {
-                                selectedRecording = recording
-                            }
-                            .background(
-                                RoundedRectangle(cornerRadius: 24)
-                                    .fill(selectedRecording?.id == recording.id ? Color.pinkVibrant.opacity(0.1) : Color.clear)
-                            )
-                            .contextMenu {
-                                Button {
-                                    selectedRecording = recording
-                                } label: {
-                                    Label("Открыть", systemImage: "arrow.right.circle")
-                                }
-
-                                if onOpenInNewWindow != nil {
-                                    Button {
-                                        onOpenInNewWindow?(recording)
-                                    } label: {
-                                        Label("Открыть в новом окне", systemImage: "macwindow.badge.plus")
-                                    }
-                                }
-
-                                Divider()
-
-                                Button(role: .destructive) {
-                                    deleteRecording(recording)
-                                } label: {
-                                    Label("Удалить", systemImage: "trash")
-                                }
-                            }
-                        }
-                    }
-                    .padding(.horizontal)
-                    .padding(.bottom)
-                }
+                .padding(.bottom)
             }
         }
     }
@@ -389,75 +405,56 @@ struct iPadMainView: View {
     // MARK: - Right Column (Meetings + Recording)
 
     private var rightColumn: some View {
-        ZStack {
-            VStack(spacing: 0) {
-                // Picker режима
-                Picker("Режим", selection: $currentRecordingMode) {
-                    Text("Обычная").tag("standard")
-                    Text("Real-time").tag("realtime")
-                    Text("Импорт").tag("import")
-                }
-                .pickerStyle(.segmented)
-                .padding()
+        VStack(spacing: 16) {
+            // Picker режима
+            Picker("Режим", selection: $currentRecordingMode) {
+                Text("Обычная").tag("standard")
+                Text("Real-time").tag("realtime")
+                Text("Импорт").tag("import")
+            }
+            .pickerStyle(.segmented)
+            .padding()
 
-                // Контент (scrollable)
-                ScrollView {
-                    VStack(spacing: 16) {
-                        // Active recording indicator
-                        if recorder.isRecording || coordinator.isRealtimeMode {
-                            activeRecordingView
-                        }
-
-                        // Встречи из календаря
-                        UpcomingMeetingsSection()
-                            .environment(\.currentRecordingMode, currentRecordingMode)
-
-                        // Записи за сегодня
-                        if !todayRecordings.isEmpty {
-                            Divider()
-
-                            VStack(alignment: .leading, spacing: 12) {
-                                HStack {
-                                    Text("Сегодня")
-                                        .font(.headline)
-                                        .foregroundStyle(.secondary)
-
-                                    Spacer()
-
-                                    Text("\(todayRecordings.count)")
-                                        .font(.caption)
-                                        .fontWeight(.medium)
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 4)
-                                        .background(Color(.systemGray5))
-                                        .clipShape(Capsule())
-                                }
-
-                                ForEach(todayRecordings) { recording in
-                                    RecordingCard(recording: recording) {
-                                        selectedRecording = recording
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    .padding()
-                    .padding(.bottom, 100) // Место для floating кнопки
-                }
-                .refreshable {
-                    if calendarManager.isConnected {
-                        await calendarManager.forceFullSync()
-                    }
-                }
+            // Active recording indicator
+            if recorder.isRecording || coordinator.isRealtimeMode {
+                activeRecordingView
             }
 
-            // Floating кнопка записи
-            VStack {
-                Spacer()
-                microphoneButton
-                    .padding(.bottom, 24)
+            // Встречи из календаря
+            UpcomingMeetingsSection()
+                .environment(\.currentRecordingMode, currentRecordingMode)
+
+            // Записи за сегодня
+            if !todayRecordings.isEmpty {
+                Divider()
+
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("Сегодня")
+                            .font(.headline)
+                            .foregroundStyle(.secondary)
+
+                        Spacer()
+
+                        Text("\(todayRecordings.count)")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color(.systemGray5))
+                            .clipShape(Capsule())
+                    }
+
+                    ForEach(todayRecordings) { recording in
+                        RecordingCard(recording: recording) {
+                            selectedRecording = recording
+                        }
+                    }
+                }
             }
         }
+        .padding()
+        .padding(.bottom, 100) // Место для floating кнопки
     }
 
     private var activeRecordingView: some View {

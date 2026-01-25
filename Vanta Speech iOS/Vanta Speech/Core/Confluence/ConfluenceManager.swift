@@ -151,6 +151,24 @@ final class ConfluenceManager: ObservableObject {
         return page
     }
 
+    /// Save default export location preferences
+    func saveDefaults(spaceKey: String, parentPageId: String?, parentPageTitle: String?) {
+        UserDefaults.standard.set(spaceKey, forKey: "ConfluenceDefaultSpaceKey")
+        if let pageId = parentPageId {
+            UserDefaults.standard.set(pageId, forKey: "ConfluenceDefaultParentPageId")
+        } else {
+            UserDefaults.standard.removeObject(forKey: "ConfluenceDefaultParentPageId")
+        }
+        
+        if let pageTitle = parentPageTitle {
+            UserDefaults.standard.set(pageTitle, forKey: "ConfluenceDefaultParentPageTitle")
+        } else {
+            UserDefaults.standard.removeObject(forKey: "ConfluenceDefaultParentPageTitle")
+        }
+    }
+    
+    // MARK: - Private Methods
+
     // MARK: - Export Settings Persistence
 
     private func saveExportSettings() {

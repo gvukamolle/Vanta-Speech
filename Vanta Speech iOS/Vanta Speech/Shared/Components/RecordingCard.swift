@@ -63,11 +63,20 @@ struct RecordingCard: View {
                     )
 
                     // Summary status
-                    statusBadge(
-                        icon: "doc.text",
-                        text: recording.summaryText != nil ? "Саммари" : "Нет саммари",
-                        isActive: recording.summaryText != nil
-                    )
+                    if recording.isSummaryGenerating {
+                        statusBadge(
+                            icon: "sparkles",
+                            text: "Анализ...",
+                            isActive: true,
+                            isAnimating: true
+                        )
+                    } else {
+                        statusBadge(
+                            icon: "doc.text",
+                            text: recording.summaryText != nil ? "Саммари" : "Нет саммари",
+                            isActive: recording.summaryText != nil
+                        )
+                    }
 
                     Spacer()
 
@@ -113,10 +122,16 @@ struct RecordingCard: View {
     }
 
     @ViewBuilder
-    private func statusBadge(icon: String, text: String, isActive: Bool) -> some View {
+    private func statusBadge(icon: String, text: String, isActive: Bool, isAnimating: Bool = false) -> some View {
         HStack(spacing: 4) {
-            Image(systemName: icon)
-                .font(.caption2)
+            if isAnimating {
+                Image(systemName: icon)
+                    .font(.caption2)
+                    .symbolEffect(.pulse.byLayer, options: .repeating, isActive: true)
+            } else {
+                Image(systemName: icon)
+                    .font(.caption2)
+            }
             Text(text)
                 .font(.caption2)
         }

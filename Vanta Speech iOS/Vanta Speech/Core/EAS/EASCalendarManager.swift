@@ -127,18 +127,10 @@ final class EASCalendarManager: ObservableObject {
         syncState.calendarSyncKey = "0"
         try? keychainManager.saveEASSyncState(syncState)
 
-        // Use detached task to prevent SwiftUI from cancelling the sync
-        // when ScrollView .refreshable view updates
-        // IMPORTANT: isSyncing = false is set INSIDE the detached task
-        // to prevent premature flag reset if parent task is cancelled
-        Task.detached { @MainActor [weak self] in
-            await self?.performFullSyncInternal()
-            self?.isSyncing = false
-            debugLog("Force full sync completed", module: "EAS", level: .info)
-        }
-
-        // Don't await the detached task - it will complete independently
-        // This prevents SwiftUI task cancellation from affecting the sync
+        // Use Task to perform sync and wait for it
+        await performFullSyncInternal()
+        self.isSyncing = false
+        debugLog("Force full sync completed", module: "EAS", level: .info)
     }
 
     /// Sync calendar events from server

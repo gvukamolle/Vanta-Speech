@@ -41,16 +41,24 @@ struct iPadSettingsContentView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            HStack(spacing: 0) {
-                // Левая колонка: Список настроек (50%)
-                settingsList
-                    .frame(width: geometry.size.width * 0.5)
+            ScrollView {
+                HStack(alignment: .top, spacing: 0) {
+                    // Левая колонка: Список настроек (50%)
+                    settingsList
+                        .frame(width: geometry.size.width * 0.5)
 
-                Divider()
+                    Divider()
 
-                // Правая колонка: Детали настройки (50%)
-                settingDetail
-                    .frame(width: geometry.size.width * 0.5)
+                    // Правая колонка: Детали настройки (50%)
+                    settingDetail
+                        .frame(width: geometry.size.width * 0.5)
+                }
+                .frame(maxWidth: .infinity, alignment: .top)
+            }
+            .refreshable {
+                if calendarManager.isConnected {
+                    await calendarManager.forceFullSync()
+                }
             }
         }
         .background(Color(.systemGroupedBackground))
@@ -59,51 +67,66 @@ struct iPadSettingsContentView: View {
     // MARK: - Settings List
 
     private var settingsList: some View {
-        List(SettingItem.allCases, selection: $selectedSetting) { item in
-            Label(item.rawValue, systemImage: item.icon)
-                .tag(item)
-                .foregroundStyle(item == .danger ? .red : .primary)
+        VStack(spacing: 8) {
+            ForEach(SettingItem.allCases) { item in
+                Button {
+                    selectedSetting = item
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: item.icon)
+                            .foregroundStyle(item == .danger ? .red : .secondary)
+                            .frame(width: 20)
+
+                        Text(item.rawValue)
+                            .foregroundStyle(item == .danger ? .red : .primary)
+
+                        Spacer()
+                    }
+                    .padding(.vertical, 10)
+                    .padding(.horizontal, 12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(selectedSetting == item
+                                ? Color.pinkVibrant.opacity(0.12)
+                                : Color(.secondarySystemGroupedBackground))
+                    )
+                }
+                .buttonStyle(.plain)
+            }
         }
-        .listStyle(.sidebar)
+        .padding()
     }
 
     // MARK: - Setting Detail
 
     @ViewBuilder
     private var settingDetail: some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                switch selectedSetting {
-                case .account:
-                    accountSection
-                case .presets:
-                    presetsSection
-                case .theme:
-                    themeSection
-                case .transcription:
-                    transcriptionSection
-                case .integrations:
-                    integrationsSection
-                case .about:
-                    aboutSection
-                case .danger:
-                    dangerSection
-                case .none:
-                    ContentUnavailableView(
-                        "Выберите раздел",
-                        systemImage: "gear",
-                        description: Text("Выберите раздел настроек слева")
-                    )
-                }
-            }
-            .padding()
-        }
-        .refreshable {
-            if calendarManager.isConnected {
-                await calendarManager.forceFullSync()
+        VStack(spacing: 0) {
+            switch selectedSetting {
+            case .account:
+                accountSection
+            case .presets:
+                presetsSection
+            case .theme:
+                themeSection
+            case .transcription:
+                transcriptionSection
+            case .integrations:
+                integrationsSection
+            case .about:
+                aboutSection
+            case .danger:
+                dangerSection
+            case .none:
+                ContentUnavailableView(
+                    "Выберите раздел",
+                    systemImage: "gear",
+                    description: Text("Выберите раздел настроек слева")
+                )
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     // MARK: - Account Section
@@ -150,6 +173,21 @@ struct iPadSettingsContentView: View {
             Text("Настройте порядок и доступность типов встреч в меню записи")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Тип записи по умолчанию")
+                    .font(.headline)
+
+                Picker("Тип записи", selection: $defaultRecordingMode) {
+                    Text("Обычная").tag("standard")
+                    Text("Real-time").tag("realtime")
+                    Text("Импорт").tag("import")
+                }
+                .pickerStyle(.segmented)
+            }
+            .padding()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .vantaGlassCard(cornerRadius: 16, shadowRadius: 0, tintOpacity: 0.15)
 
             VStack(spacing: 12) {
                 ForEach(presetSettings.orderedPresets, id: \.rawValue) { preset in
