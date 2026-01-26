@@ -63,7 +63,7 @@ struct CalendarView: View {
 
     private var daysGrid: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 4) {
-            ForEach(daysInMonth, id: \.self) { day in
+            ForEach(Array(daysInMonth.enumerated()), id: \.offset) { _, day in
                 CalendarDayView(
                     day: day,
                     isToday: isToday(day),

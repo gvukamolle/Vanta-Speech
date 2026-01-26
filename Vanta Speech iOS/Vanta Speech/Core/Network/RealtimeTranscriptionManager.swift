@@ -115,6 +115,8 @@ final class RealtimeTranscriptionManager: ObservableObject {
         currentInterimText = ""
 
         debugLog("Chunk enqueued with preview: '\(previewText.prefix(30))...'", module: "RealtimeTranscriptionManager")
+        let sizeMB = fileSizeMB(for: url)
+        debugLog("Chunk enqueued: \(url.lastPathComponent), duration: \(String(format: "%.2f", duration))s, size: \(String(format: "%.2f", sizeMB)) MB, queue=\(pendingChunksCount)", module: "RealtimeTranscriptionManager")
 
         processNextChunkIfNeeded()
     }
@@ -152,11 +154,12 @@ final class RealtimeTranscriptionManager: ObservableObject {
             return
         }
 
+        debugLog("Waiting for chunks: queued=\(chunkQueue.count), processing=\(isProcessing)", module: "RealtimeTranscriptionManager")
         // Ожидаем через continuation (без busy-wait)
         await withCheckedContinuation { continuation in
             self.completionContinuations.append(continuation)
         }
-        debugLog("All chunks processed", module: "RealtimeTranscriptionManager")
+        debugLog("All chunks processed, processedCount=\(processedChunkURLs.count)", module: "RealtimeTranscriptionManager")
     }
 
     /// Проверить есть ли еще чанки в обработке
@@ -194,6 +197,7 @@ final class RealtimeTranscriptionManager: ObservableObject {
 
         let chunk = chunkQueue.removeFirst()
         pendingChunksCount = chunkQueue.count
+        debugLog("Starting chunk processing: pending=\(pendingChunksCount)", module: "RealtimeTranscriptionManager")
 
         currentTask = Task {
             await processChunk(chunk)
@@ -219,7 +223,8 @@ final class RealtimeTranscriptionManager: ObservableObject {
     }
 
     private func processChunk(_ chunk: ChunkItem) async {
-        debugLog("Processing chunk: \(chunk.url.lastPathComponent)", module: "RealtimeTranscriptionManager")
+        let sizeMB = fileSizeMB(for: chunk.url)
+        debugLog("Processing chunk: \(chunk.url.lastPathComponent), duration: \(String(format: "%.2f", chunk.duration))s, size: \(String(format: "%.2f", sizeMB)) MB", module: "RealtimeTranscriptionManager")
 
         do {
             // Транскрибируем аудио через Whisper
@@ -234,6 +239,7 @@ final class RealtimeTranscriptionManager: ObservableObject {
                 paragraphs[index].status = .completed
                 debugLog("Chunk transcribed: '\(formattedResult.prefix(50))...'", module: "RealtimeTranscriptionManager")
             }
+            debugLog("Chunk completed: id=\(chunk.id), textLength=\(formattedResult.count), pending=\(chunkQueue.count)", module: "RealtimeTranscriptionManager")
 
             // Сохраняем URL чанка для последующего мержа (НЕ удаляем файл!)
             processedChunkURLs.append(chunk.url)
@@ -314,5 +320,10 @@ final class RealtimeTranscriptionManager: ObservableObject {
         if removedCount > 0 {
             debugLog("Cleaned up \(removedCount) orphaned chunk files", module: "RealtimeTranscriptionManager")
         }
+    }
+
+    private func fileSizeMB(for url: URL) -> Double {
+        let bytes = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.doubleValue ?? 0
+        return bytes / (1024 * 1024)
     }
 }

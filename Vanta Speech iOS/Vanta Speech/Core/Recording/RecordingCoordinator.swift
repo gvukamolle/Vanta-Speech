@@ -105,6 +105,9 @@ final class RecordingCoordinator: ObservableObject {
         currentRecordingId = UUID()
 
         let fileURL = try await audioRecorder.startRecording()
+        if let recordingId = currentRecordingId {
+            saveDraftRecording(recordingId: recordingId, preset: preset, fileURL: fileURL)
+        }
 
         // Запускаем Live Activity
         if let id = currentRecordingId {
@@ -287,21 +290,48 @@ final class RecordingCoordinator: ObservableObject {
                 return nil
             }
 
-            // Обычная новая запись
-            let recording = Recording(
-                id: recordingId,
-                title: "\(preset.displayName) \(formatDate(Date()))",
-                duration: data.duration,
-                audioFileURL: data.url.path,
-                preset: preset
-            )
+            // Обычная новая запись (обновляем черновик если он уже создан)
+            var savedRecording: Recording?
+            if let context = modelContext {
+                let descriptor = FetchDescriptor<Recording>(
+                    predicate: #Predicate { $0.id == recordingId }
+                )
+                if let recordings = try? context.fetch(descriptor),
+                   let existing = recordings.first {
+                    if existing.title.isEmpty {
+                        existing.title = "\(preset.displayName) \(formatDate(Date()))"
+                    }
+                    existing.duration = data.duration
+                    existing.audioFileURL = data.url.path
+                    existing.preset = preset
+                    savedRecording = existing
+                    try? context.save()
+                } else {
+                    let recording = Recording(
+                        id: recordingId,
+                        title: "\(preset.displayName) \(formatDate(Date()))",
+                        duration: data.duration,
+                        audioFileURL: data.url.path,
+                        preset: preset
+                    )
 
-            modelContext?.insert(recording)
-            do {
-                try modelContext?.save()
-            } catch {
-                debugLog("Failed to save recording: \(error)", module: "RecordingCoordinator", level: .error)
-                debugCaptureError(error, context: "Saving new recording")
+                    context.insert(recording)
+                    savedRecording = recording
+                    do {
+                        try context.save()
+                    } catch {
+                        debugLog("Failed to save recording: \(error)", module: "RecordingCoordinator", level: .error)
+                        debugCaptureError(error, context: "Saving new recording")
+                    }
+                }
+            } else {
+                savedRecording = Recording(
+                    id: recordingId,
+                    title: "\(preset.displayName) \(formatDate(Date()))",
+                    duration: data.duration,
+                    audioFileURL: data.url.path,
+                    preset: preset
+                )
             }
 
             // Сохраняем для возможной транскрипции
@@ -322,7 +352,7 @@ final class RecordingCoordinator: ObservableObject {
             currentRecordingId = nil
 
             debugLog("Recording stopped, ready for transcription", module: "RecordingCoordinator")
-            return recording
+            return savedRecording
 
         case .failure(let error):
             debugLog("Failed to stop recording: \(error)", module: "RecordingCoordinator", level: .error)
@@ -354,9 +384,7 @@ final class RecordingCoordinator: ObservableObject {
         // Настраиваем callback для завершения фразы
         // Когда SpeechRecognizer определяет паузу 3 сек — отправляем чанк на сервер
         realtimeSpeechRecognizer.onPhraseCompleted = { [weak manager] url, duration, previewText in
-            Task { @MainActor in
-                manager?.enqueueChunk(url: url, duration: duration, previewText: previewText)
-            }
+            manager?.enqueueChunk(url: url, duration: duration, previewText: previewText)
         }
 
         // Начинаем запись с локальной диктовкой
@@ -402,6 +430,7 @@ final class RecordingCoordinator: ObservableObject {
         let duration = realtimeSpeechRecognizer.stopRecording()
 
         // Ждём завершения всех pending транскрипций
+        debugLog("Realtime stop: waiting for chunks, queued=\(manager.pendingChunksCount), processing=\(manager.hasProcessingChunks)", module: "RecordingCoordinator")
         await manager.waitForCompletion()
 
         // Получаем финальную транскрипцию
@@ -409,6 +438,7 @@ final class RecordingCoordinator: ObservableObject {
 
         // Мержим все чанки в один аудиофайл
         let chunkURLs = manager.getProcessedChunkURLs()
+        debugLog("Realtime stop: processedChunks=\(chunkURLs.count), textLength=\(finalTranscription.count)", module: "RecordingCoordinator")
         var finalAudioURL = ""
 
         if !chunkURLs.isEmpty {
@@ -435,7 +465,7 @@ final class RecordingCoordinator: ObservableObject {
 
         // Если аудиофайл так и не получен — не сохраняем запись
         guard !finalAudioURL.isEmpty else {
-            debugLog("Realtime recording finished without audio file, skipping save", module: "RecordingCoordinator", level: .error)
+            debugLog("Realtime recording finished without audio file, skipping save. processedChunks=\(chunkURLs.count)", module: "RecordingCoordinator", level: .error)
             pendingTranscription = nil
             realtimeSpeechRecognizer.onPhraseCompleted = nil
             realtimeCancellables.removeAll()
@@ -883,6 +913,37 @@ final class RecordingCoordinator: ObservableObject {
         formatter.locale = Locale(identifier: "ru_RU")
         formatter.dateFormat = "d MMM, HH:mm"
         return formatter.string(from: date)
+    }
+
+    private func saveDraftRecording(recordingId: UUID, preset: RecordingPreset, fileURL: URL) {
+        guard let context = modelContext else { return }
+
+        let descriptor = FetchDescriptor<Recording>(
+            predicate: #Predicate { $0.id == recordingId }
+        )
+        if let recordings = try? context.fetch(descriptor),
+           let existing = recordings.first {
+            existing.audioFileURL = fileURL.path
+            if existing.title.isEmpty {
+                existing.title = "\(preset.displayName) \(formatDate(Date()))"
+            }
+        } else {
+            let recording = Recording(
+                id: recordingId,
+                title: "\(preset.displayName) \(formatDate(Date()))",
+                duration: 0,
+                audioFileURL: fileURL.path,
+                preset: preset
+            )
+            context.insert(recording)
+        }
+
+        do {
+            try context.save()
+        } catch {
+            debugLog("Failed to save draft recording: \(error)", module: "RecordingCoordinator", level: .error)
+            debugCaptureError(error, context: "Saving draft recording")
+        }
     }
 
     /// Общая длительность для отображения (учитывает продолжение записи)

@@ -223,6 +223,10 @@ final class EASClient {
                 let message = String(data: data, encoding: .utf8)
                 throw EASError.serverError(statusCode: httpResponse.statusCode, message: message)
             }
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let urlError as URLError where urlError.code == .cancelled {
+            throw CancellationError()
         } catch let error as EASError {
             throw error
         } catch {

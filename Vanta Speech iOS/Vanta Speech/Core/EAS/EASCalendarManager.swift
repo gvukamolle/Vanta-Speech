@@ -22,6 +22,7 @@ final class EASCalendarManager: ObservableObject {
     private let client: EASClient
     private let keychainManager: KeychainManager
     private var syncState: EASSyncState
+    private var fullSyncTask: Task<Void, Never>?
 
     // MARK: - Initialization
 
@@ -127,10 +128,15 @@ final class EASCalendarManager: ObservableObject {
         syncState.calendarSyncKey = "0"
         try? keychainManager.saveEASSyncState(syncState)
 
-        // Use Task to perform sync and wait for it
-        await performFullSyncInternal()
-        self.isSyncing = false
-        debugLog("Force full sync completed", module: "EAS", level: .info)
+        fullSyncTask = Task.detached { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                self.isSyncing = false
+                self.fullSyncTask = nil
+                debugLog("Force full sync completed", module: "EAS", level: .info)
+            }
+            await self.performFullSyncInternal()
+        }
     }
 
     /// Sync calendar events from server

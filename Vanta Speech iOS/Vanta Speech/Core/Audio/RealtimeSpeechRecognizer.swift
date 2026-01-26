@@ -148,11 +148,29 @@ final class RealtimeSpeechRecognizer: NSObject, ObservableObject {
         // Запрещаем гашение экрана во время записи
         UIApplication.shared.isIdleTimerDisabled = true
 
+        debugLog("Realtime config: pauseThreshold=\(String(format: "%.2f", pauseThreshold))s, minWordCount=\(minimumWordCount)", module: "RealtimeSpeechRecognizer")
         debugLog("Recording started", module: "RealtimeSpeechRecognizer")
     }
 
     func stopRecording() -> TimeInterval {
         let duration = recordingDuration
+
+        // Останавливаем все
+        pauseTimer?.invalidate()
+        pauseTimer = nil
+        metricsTimer?.invalidate()
+        metricsTimer = nil
+
+        recognitionRequest?.endAudio()
+        recognitionRequest = nil
+        recognitionTask?.cancel()
+        recognitionTask = nil
+
+        audioEngine.stop()
+        audioEngine.inputNode.removeTap(onBus: 0)
+
+        // Закрываем файл перед финализацией, чтобы корректно записалась длительность/размер
+        audioFile = nil
 
         // Финализируем текущую фразу если есть
         if let _ = currentChunkURL,
@@ -161,20 +179,6 @@ final class RealtimeSpeechRecognizer: NSObject, ObservableObject {
             finishCurrentPhrase(duration: phraseDuration, allowEmptyText: true)
         }
 
-        // Останавливаем все
-        pauseTimer?.invalidate()
-        pauseTimer = nil
-        metricsTimer?.invalidate()
-        metricsTimer = nil
-
-        recognitionTask?.cancel()
-        recognitionTask = nil
-        recognitionRequest = nil
-
-        audioEngine.stop()
-        audioEngine.inputNode.removeTap(onBus: 0)
-
-        audioFile = nil
         currentChunkURL = nil
 
         deactivateAudioSession()
@@ -362,20 +366,22 @@ final class RealtimeSpeechRecognizer: NSObject, ObservableObject {
         guard let chunkURL = currentChunkURL else { return }
 
         let text = currentPhraseText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fileSizeBytes = (try? fileManager.attributesOfItem(atPath: chunkURL.path)[.size] as? NSNumber)?.intValue ?? 0
 
         if !text.isEmpty || allowEmptyText {
             if text.isEmpty && allowEmptyText {
                 // Проверяем что файл не пустой
-                if let fileSize = (try? fileManager.attributesOfItem(atPath: chunkURL.path)[.size] as? NSNumber)?.intValue,
-                   fileSize == 0 {
+                if fileSizeBytes == 0 {
                     try? fileManager.removeItem(at: chunkURL)
                     currentPhraseText = ""
                     interimText = ""
                     currentChunkURL = nil
+                    debugLog("Dropping empty chunk: \(chunkURL.lastPathComponent)", module: "RealtimeSpeechRecognizer", level: .warning)
                     return
                 }
             }
-            debugLog("Phrase completed: '\(text.prefix(50))...', duration: \(duration)s", module: "RealtimeSpeechRecognizer")
+            let fileSizeKB = Double(fileSizeBytes) / 1024.0
+            debugLog("Phrase completed: '\(text.prefix(50))...', duration: \(String(format: "%.2f", duration))s, size: \(String(format: "%.1f", fileSizeKB)) KB", module: "RealtimeSpeechRecognizer")
             onPhraseCompleted?(chunkURL, duration, text)
         } else {
             // Удаляем пустой чанк
