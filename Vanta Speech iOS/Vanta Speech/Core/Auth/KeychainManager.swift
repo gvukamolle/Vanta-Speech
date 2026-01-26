@@ -12,6 +12,7 @@ final class KeychainManager {
     private let easDeviceIdKey = "eas_device_id"
     private let easSyncStateKey = "eas_sync_state"
     private let easCachedEventsKey = "eas_cached_events"
+    private let fileManager = FileManager.default
 
     private init() {}
 
@@ -137,20 +138,45 @@ final class KeychainManager {
 
     // MARK: - EAS Cached Events
 
+    private var easCacheDirectory: URL {
+        let base = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let dir = base.appendingPathComponent(service, isDirectory: true)
+        if !fileManager.fileExists(atPath: dir.path) {
+            try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        return dir
+    }
+
+    private var easCachedEventsURL: URL {
+        easCacheDirectory.appendingPathComponent("eas_cached_events.json")
+    }
+
     /// Save EAS cached events
     func saveEASCachedEvents(_ events: [EASCalendarEvent]) throws {
         let data = try JSONEncoder().encode(events)
-        try save(data: data, forKey: easCachedEventsKey)
+        try data.write(to: easCachedEventsURL, options: [.atomic, .completeFileProtection])
+        // Ensure legacy Keychain cache is removed
+        delete(forKey: easCachedEventsKey)
     }
 
     /// Load EAS cached events
     func loadEASCachedEvents() -> [EASCalendarEvent]? {
-        guard let data = load(forKey: easCachedEventsKey) else { return nil }
-        return try? JSONDecoder().decode([EASCalendarEvent].self, from: data)
+        if let data = try? Data(contentsOf: easCachedEventsURL) {
+            return try? JSONDecoder().decode([EASCalendarEvent].self, from: data)
+        }
+
+        // Migration from legacy Keychain storage
+        guard let legacyData = load(forKey: easCachedEventsKey),
+              let events = try? JSONDecoder().decode([EASCalendarEvent].self, from: legacyData) else {
+            return nil
+        }
+        try? saveEASCachedEvents(events)
+        return events
     }
 
     /// Delete EAS cached events
     func deleteEASCachedEvents() {
+        try? fileManager.removeItem(at: easCachedEventsURL)
         delete(forKey: easCachedEventsKey)
     }
 

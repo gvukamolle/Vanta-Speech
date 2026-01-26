@@ -67,7 +67,7 @@ final class RealtimeTranscriptionManager: ObservableObject {
     private var processedChunkURLs: [URL] = []
 
     /// Continuation для ожидания завершения всех чанков
-    private var completionContinuation: CheckedContinuation<Void, Never>?
+    private var completionContinuations: [CheckedContinuation<Void, Never>] = []
 
     init() {
         cleanupOrphanedChunks()
@@ -137,11 +137,8 @@ final class RealtimeTranscriptionManager: ObservableObject {
         pendingChunksCount = 0
         isProcessing = false
 
-        // Resume continuation при reset чтобы избежать deadlock
-        if let continuation = completionContinuation {
-            completionContinuation = nil
-            continuation.resume()
-        }
+        // Resume all continuations при reset чтобы избежать deadlock
+        resumeAllContinuations()
 
         cleanupChunks()  // Очищаем временные файлы чанков
         debugLog("Reset", module: "RealtimeTranscriptionManager")
@@ -157,7 +154,7 @@ final class RealtimeTranscriptionManager: ObservableObject {
 
         // Ожидаем через continuation (без busy-wait)
         await withCheckedContinuation { continuation in
-            self.completionContinuation = continuation
+            self.completionContinuations.append(continuation)
         }
         debugLog("All chunks processed", module: "RealtimeTranscriptionManager")
     }
@@ -208,13 +205,17 @@ final class RealtimeTranscriptionManager: ObservableObject {
             } else {
                 status = .idle
 
-                // Resume continuation если кто-то ожидает завершения
-                if let continuation = completionContinuation {
-                    completionContinuation = nil
-                    continuation.resume()
-                }
+                // Resume continuations если кто-то ожидает завершения
+                resumeAllContinuations()
             }
         }
+    }
+
+    private func resumeAllContinuations() {
+        guard !completionContinuations.isEmpty else { return }
+        let continuations = completionContinuations
+        completionContinuations.removeAll()
+        continuations.forEach { $0.resume() }
     }
 
     private func processChunk(_ chunk: ChunkItem) async {

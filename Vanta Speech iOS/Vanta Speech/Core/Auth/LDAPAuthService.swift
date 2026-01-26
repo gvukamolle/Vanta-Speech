@@ -98,6 +98,17 @@ actor LDAPAuthService {
                 return
             }
 
+            if Self.useLDAPS {
+                let sslSettings: [CFString: Any] = [
+                    kCFStreamSSLLevel: kCFStreamSocketSecurityLevelNegotiatedSSL,
+                    kCFStreamSSLValidatesCertificateChain: true,
+                    kCFStreamSSLPeerName: host as CFString
+                ]
+                let sslKey = Stream.PropertyKey(kCFStreamPropertySSLSettings as String)
+                input.setProperty(sslSettings, forKey: sslKey)
+                output.setProperty(sslSettings, forKey: sslKey)
+            }
+
             input.open()
             output.open()
 

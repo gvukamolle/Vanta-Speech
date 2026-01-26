@@ -98,6 +98,7 @@ final class AuthenticationManager: ObservableObject {
 
     /// Skip authentication for testing (temporary)
     func skipAuthentication() {
+#if DEBUG
         let testSession = UserSession(
             username: "test_user",
             displayName: "Тестовый пользователь",
@@ -106,6 +107,9 @@ final class AuthenticationManager: ObservableObject {
         try? keychain.saveSession(testSession)
         currentSession = testSession
         isAuthenticated = true
+#else
+        debugLog("Skip authentication is disabled in non-debug builds", module: "Auth", level: .warning)
+#endif
     }
 
     // MARK: - Private

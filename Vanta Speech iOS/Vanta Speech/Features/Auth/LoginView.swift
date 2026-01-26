@@ -147,7 +147,8 @@ struct LoginView: View {
             .opacity(username.isEmpty || password.isEmpty ? 0.6 : 1.0)
             .padding(.top, 8)
 
-            // Skip auth button (temporary for testing)
+#if DEBUG
+            // Skip auth button (debug only)
             Button {
                 skipAuth()
             } label: {
@@ -156,6 +157,7 @@ struct LoginView: View {
                     .foregroundStyle(.secondary)
             }
             .padding(.top, 16)
+#endif
         }
     }
 

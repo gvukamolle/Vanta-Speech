@@ -61,7 +61,10 @@ final class RealtimeSpeechRecognizer: NSObject, ObservableObject {
 
     /// Минимальное количество слов для отправки фразы
     /// Защита от галлюцинаций Whisper на коротких аудио
-    private let minimumWordCount = 50
+    private var minimumWordCount: Int {
+        let value = UserDefaults.standard.integer(forKey: "realtime_minWordCount")
+        return value > 0 ? value : 10
+    }
 
     // MARK: - Directories
 
@@ -152,11 +155,10 @@ final class RealtimeSpeechRecognizer: NSObject, ObservableObject {
         let duration = recordingDuration
 
         // Финализируем текущую фразу если есть
-        if let chunkURL = currentChunkURL,
-           let phraseStart = phraseStartTime,
-           !currentPhraseText.isEmpty {
+        if let _ = currentChunkURL,
+           let phraseStart = phraseStartTime {
             let phraseDuration = Date().timeIntervalSince(phraseStart)
-            finishCurrentPhrase(duration: phraseDuration)
+            finishCurrentPhrase(duration: phraseDuration, allowEmptyText: true)
         }
 
         // Останавливаем все
@@ -356,12 +358,23 @@ final class RealtimeSpeechRecognizer: NSObject, ObservableObject {
         }
     }
 
-    private func finishCurrentPhrase(duration: TimeInterval) {
+    private func finishCurrentPhrase(duration: TimeInterval, allowEmptyText: Bool = false) {
         guard let chunkURL = currentChunkURL else { return }
 
         let text = currentPhraseText.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        if !text.isEmpty {
+        if !text.isEmpty || allowEmptyText {
+            if text.isEmpty && allowEmptyText {
+                // Проверяем что файл не пустой
+                if let fileSize = (try? fileManager.attributesOfItem(atPath: chunkURL.path)[.size] as? NSNumber)?.intValue,
+                   fileSize == 0 {
+                    try? fileManager.removeItem(at: chunkURL)
+                    currentPhraseText = ""
+                    interimText = ""
+                    currentChunkURL = nil
+                    return
+                }
+            }
             debugLog("Phrase completed: '\(text.prefix(50))...', duration: \(duration)s", module: "RealtimeSpeechRecognizer")
             onPhraseCompleted?(chunkURL, duration, text)
         } else {

@@ -422,8 +422,28 @@ final class RecordingCoordinator: ObservableObject {
             }
         }
 
+        // Fallback: сохранить первый чанк как отдельный файл
+        if finalAudioURL.isEmpty, let fallbackChunk = chunkURLs.first {
+            if let copiedURL = copyFallbackChunk(from: fallbackChunk) {
+                finalAudioURL = copiedURL.path
+                debugLog("Using fallback chunk file: \(copiedURL.lastPathComponent)", module: "RecordingCoordinator", level: .warning)
+            }
+        }
+
         // Очищаем временные файлы чанков
         manager.cleanupChunks()
+
+        // Если аудиофайл так и не получен — не сохраняем запись
+        guard !finalAudioURL.isEmpty else {
+            debugLog("Realtime recording finished without audio file, skipping save", module: "RecordingCoordinator", level: .error)
+            pendingTranscription = nil
+            realtimeSpeechRecognizer.onPhraseCompleted = nil
+            realtimeCancellables.removeAll()
+            isRealtimeMode = false
+            currentPreset = nil
+            currentRecordingId = nil
+            return nil
+        }
 
         // Создаём запись с audioFileURL (теперь содержит путь к merged файлу)
         let recording = Recording(
@@ -459,6 +479,20 @@ final class RecordingCoordinator: ObservableObject {
         debugLog("Realtime recording stopped, paragraphs: \(manager.completedParagraphsCount), audioFile: \(finalAudioURL.isEmpty ? "none" : "saved")", module: "RecordingCoordinator")
 
         return recording
+    }
+
+    private func copyFallbackChunk(from chunkURL: URL) -> URL? {
+        let ext = chunkURL.pathExtension.isEmpty ? "m4a" : chunkURL.pathExtension
+        let fallbackURL = audioRecorder.recordingsDirectory
+            .appendingPathComponent("realtime_fallback_\(Date().timeIntervalSince1970).\(ext)")
+        do {
+            try FileManager.default.copyItem(at: chunkURL, to: fallbackURL)
+            return fallbackURL
+        } catch {
+            debugLog("Failed to copy fallback chunk: \(error)", module: "RecordingCoordinator", level: .error)
+            debugCaptureError(error, context: "Copying fallback chunk")
+            return nil
+        }
     }
 
     /// Начать саммаризацию для real-time записи

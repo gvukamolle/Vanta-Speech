@@ -1,75 +1,37 @@
 import SwiftUI
 import SwiftData
 import Combine
-import UniformTypeIdentifiers
 
 struct RecordingView: View {
     @Environment(\.modelContext) private var modelContext
-    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject var recorder: AudioRecorder
     @EnvironmentObject var coordinator: RecordingCoordinator
 
-    @State private var showRecordingSheet = false
-    @State private var showRealtimeRecordingSheet = false
-    @State private var showRealtimeWarning = false
-    @State private var pendingRealtimePreset: RecordingPreset?
-    @State private var showError = false
-    @State private var errorMessage = ""
-    @State private var showFileImporter = false
-    @State private var showPresetPickerForImport = false
-    @State private var importedAudioData: AudioImporter.ImportedAudio?
-    @State private var isImporting = false
-    @State private var showRecordingOptionsSheet = false  // Sheet для выбора пресета с привязкой к встрече
-
-    @StateObject private var presetSettings = PresetSettings.shared
-    @StateObject private var calendarManager = EASCalendarManager.shared
-
-    /// Текущий режим записи в сессии (не сохраняется при перезапуске)
-    @State private var currentRecordingMode = "standard"
+    @StateObject private var viewModel = RecordingViewModel()
 
     /// Текущий режим записи
     private var isRealtimeMode: Bool {
-        currentRecordingMode == "realtime"
+        viewModel.isRealtimeMode
     }
 
     /// Режим импорта
     private var isImportMode: Bool {
-        currentRecordingMode == "import"
+        viewModel.isImportMode
     }
 
     /// Текущий режим для отображения
     private var currentModeDisplayName: String {
-        switch currentRecordingMode {
-        case "realtime": return "Real-time"
-        case "import": return "Импорт"
-        default: return "Записать"
-        }
+        viewModel.currentModeDisplayName
     }
 
     /// Иконка текущего режима
     private var currentModeIcon: String {
-        switch currentRecordingMode {
-        case "realtime": return "text.badge.plus"
-        case "import": return "square.and.arrow.down"
-        default: return "mic.fill"
-        }
+        viewModel.currentModeIcon
     }
 
     /// Ближайшая встреча (текущая или следующая в течение 2 часов)
     private var upcomingMeeting: EASCalendarEvent? {
-        let now = Date()
-        let twoHoursLater = now.addingTimeInterval(2 * 60 * 60)
-
-        return calendarManager.cachedEvents
-            .filter { event in
-                // Текущая встреча (уже началась, но не закончилась)
-                let isOngoing = event.startTime <= now && event.endTime > now
-                // Встреча начнётся в ближайшие 2 часа
-                let isUpcoming = event.startTime > now && event.startTime <= twoHoursLater
-                return isOngoing || isUpcoming
-            }
-            .sorted { $0.startTime < $1.startTime }
-            .first
+        viewModel.upcomingMeeting
     }
 
     var body: some View {
@@ -83,7 +45,7 @@ struct RecordingView: View {
                 ScrollView {
                     VStack(spacing: 16) {
                         // Режим записи (временный для сессии)
-                        Picker("Режим", selection: $currentRecordingMode) {
+                        Picker("Режим", selection: $viewModel.currentRecordingMode) {
                             Text("Обычная").tag("standard")
                             Text("Real-time").tag("realtime")
                             Text("Импорт").tag("import")
@@ -92,7 +54,7 @@ struct RecordingView: View {
 
                         // Upcoming meetings from Exchange calendar
                         UpcomingMeetingsSection()
-                            .environment(\.currentRecordingMode, currentRecordingMode)
+                            .environment(\.currentRecordingMode, viewModel.currentRecordingMode)
 
                         // Today's recordings
                         TodayRecordingsSection()
@@ -101,9 +63,7 @@ struct RecordingView: View {
                     .padding(.bottom, 100)
                 }
                 .refreshable {
-                    if calendarManager.isConnected {
-                        await calendarManager.forceFullSync()
-                    }
+                    await viewModel.refreshCalendar()
                 }
                 .background(Color(.systemGroupedBackground).opacity(0.9))
 
@@ -116,69 +76,69 @@ struct RecordingView: View {
             }
             .navigationTitle("Запись")
             .onAppear {
-                // Инициализируем текущий режим из настроек по умолчанию
-                let defaultMode = UserDefaults.standard.string(forKey: "defaultRecordingMode") ?? "standard"
-                currentRecordingMode = defaultMode
+                viewModel.bind(
+                    recorder: recorder,
+                    coordinator: coordinator,
+                    calendarManager: .shared,
+                    presetSettings: .shared,
+                    modelContext: modelContext
+                )
+                viewModel.loadDefaultMode()
             }
-            .sheet(isPresented: $showRecordingSheet) {
-                if let preset = coordinator.currentPreset {
-                    ActiveRecordingSheet(preset: preset, onStop: stopRecording)
+            .sheet(isPresented: $viewModel.showRecordingSheet) {
+                if let preset = viewModel.currentPreset {
+                    ActiveRecordingSheet(preset: preset, onStop: viewModel.stopRecording)
                         .environmentObject(recorder)
                         .environmentObject(coordinator)
                 }
             }
-            .sheet(isPresented: $showRealtimeRecordingSheet) {
-                if let preset = coordinator.currentPreset {
-                    RealtimeRecordingSheet(preset: preset, onStop: stopRealtimeRecording)
+            .sheet(isPresented: $viewModel.showRealtimeRecordingSheet) {
+                if let preset = viewModel.currentPreset {
+                    RealtimeRecordingSheet(preset: preset, onStop: viewModel.stopRealtimeRecording)
                         .environmentObject(coordinator)
                 }
             }
-            .alert("Ошибка", isPresented: $showError) {
+            .alert("Ошибка", isPresented: $viewModel.showError) {
                 Button("OK", role: .cancel) {}
             } message: {
-                Text(errorMessage)
+                Text(viewModel.errorMessage)
             }
-            .alert("Real-time транскрипция", isPresented: $showRealtimeWarning) {
+            .alert("Real-time транскрипция", isPresented: $viewModel.showRealtimeWarning) {
                 Button("Начать запись") {
-                    if let preset = pendingRealtimePreset {
-                        startRealtimeRecording(preset: preset)
-                    }
-                    pendingRealtimePreset = nil
+                    viewModel.confirmRealtimeRecording()
                 }
                 Button("Отмена", role: .cancel) {
-                    pendingRealtimePreset = nil
+                    viewModel.cancelRealtimeRecording()
                 }
             } message: {
                 Text("В этом режиме не сворачивайте приложение. При сворачивании запись будет приостановлена.")
             }
             .fileImporter(
-                isPresented: $showFileImporter,
+                isPresented: $viewModel.showFileImporter,
                 allowedContentTypes: AudioImporter.supportedTypes,
                 allowsMultipleSelection: false
             ) { result in
-                handleFileImport(result: result)
+                viewModel.handleFileImport(result: result)
             }
-            .sheet(isPresented: $showPresetPickerForImport) {
-                if let audioData = importedAudioData {
+            .sheet(isPresented: $viewModel.showPresetPickerForImport) {
+                if let audioData = viewModel.importedAudioData {
                     ImportPresetPickerSheet(
                         audioData: audioData,
-                        presets: presetSettings.enabledPresets,
+                        presets: viewModel.enabledPresets,
                         onSelect: { preset in
-                            finalizeImport(audioData: audioData, preset: preset)
-                            showPresetPickerForImport = false
+                            viewModel.finalizeImport(audioData: audioData, preset: preset)
+                            viewModel.showPresetPickerForImport = false
                         },
                         onCancel: {
-                            // Удаляем импортированный файл если пользователь отменил
-                            try? FileManager.default.removeItem(at: audioData.url)
-                            importedAudioData = nil
-                            showPresetPickerForImport = false
+                            viewModel.cancelImport()
+                            viewModel.showPresetPickerForImport = false
                         }
                     )
                     .presentationDetents([.medium])
                 }
             }
             .overlay {
-                if isImporting {
+                if viewModel.isImporting {
                     Color.black.opacity(0.3)
                         .ignoresSafeArea()
                         .overlay {
@@ -189,20 +149,20 @@ struct RecordingView: View {
                 }
             }
             // Sheet для выбора пресета с предложением привязки к встрече
-            .sheet(isPresented: $showRecordingOptionsSheet) {
+            .sheet(isPresented: $viewModel.showRecordingOptionsSheet) {
                 RecordingOptionsSheet(
                     upcomingMeeting: upcomingMeeting,
-                    presets: presetSettings.enabledPresets,
+                    presets: viewModel.enabledPresets,
                     isRealtimeMode: isRealtimeMode,
                     onSelectPreset: { preset, linkToMeeting in
-                        showRecordingOptionsSheet = false
+                        viewModel.showRecordingOptionsSheet = false
                         if linkToMeeting, let meeting = upcomingMeeting {
                             MeetingRecordingLink.shared.pendingMeetingEvent = meeting
                         }
-                        startRecordingWithPreset(preset, realtime: isRealtimeMode)
+                        viewModel.startRecordingWithPreset(preset, realtime: isRealtimeMode)
                     },
                     onCancel: {
-                        showRecordingOptionsSheet = false
+                        viewModel.showRecordingOptionsSheet = false
                     }
                 )
                 .presentationDetents([.medium])
@@ -215,20 +175,20 @@ struct RecordingView: View {
 
     private var microphoneButton: some View {
         Button {
-            handleButtonTap()
+            viewModel.handleButtonTap()
         } label: {
             HStack(spacing: 8) {
-                if recorder.isRecording {
+                if viewModel.isRecording {
                     Circle()
-                        .fill(coordinator.isRealtimeMode ? Color.green : Color.pinkVibrant)
+                        .fill(viewModel.isRealtimeActive ? Color.green : Color.pinkVibrant)
                         .frame(width: 8, height: 8)
                         .modifier(PulseAnimation())
 
-                    Image(systemName: coordinator.isRealtimeMode ? "text.badge.plus" : "waveform")
+                    Image(systemName: viewModel.isRealtimeActive ? "text.badge.plus" : "waveform")
 
-                    Text(formatTime(recorder.recordingDuration))
+                    Text(formatTime(viewModel.recordingDuration))
                         .monospacedDigit()
-                } else if recorder.isConverting {
+                } else if viewModel.isConverting {
                     ProgressView()
                         .tint(.primary)
 
@@ -252,82 +212,7 @@ struct RecordingView: View {
             .vantaGlassProminent(cornerRadius: 28)
         }
         .buttonStyle(.plain)
-        .disabled(recorder.isConverting)
-    }
-
-    /// Обработка нажатия на кнопку
-    private func handleButtonTap() {
-        if recorder.isRecording {
-            // Во время записи - открываем sheet
-            if coordinator.isRealtimeMode {
-                showRealtimeRecordingSheet = true
-            } else {
-                showRecordingSheet = true
-            }
-        } else if isImportMode {
-            // Режим импорта - открываем file picker
-            showFileImporter = true
-        } else {
-            // Обычный/Real-time режим - показываем sheet с выбором пресета и привязкой к встрече
-            showRecordingOptionsSheet = true
-        }
-    }
-
-    // MARK: - Actions
-
-    private func startRecordingWithPreset(_ preset: RecordingPreset, realtime: Bool = false) {
-        if realtime {
-            // Показываем предупреждение перед real-time записью
-            pendingRealtimePreset = preset
-            showRealtimeWarning = true
-        } else {
-            Task {
-                do {
-                    try await coordinator.startRecording(preset: preset)
-                    // Sheet не открываем автоматически - пользователь откроет через баннер при необходимости
-                } catch {
-                    errorMessage = error.localizedDescription
-                    showError = true
-                    debugCaptureError(error, context: "Starting recording")
-                }
-            }
-        }
-    }
-
-    private func startRealtimeRecording(preset: RecordingPreset) {
-        Task {
-            do {
-                try await coordinator.startRealtimeRecording(preset: preset)
-                showRealtimeRecordingSheet = true
-            } catch {
-                errorMessage = error.localizedDescription
-                showError = true
-                debugCaptureError(error, context: "Starting realtime recording")
-            }
-        }
-    }
-
-    private func stopRecording() {
-        showRecordingSheet = false
-
-        Task {
-            _ = await coordinator.stopRecording()
-
-            // Автоматическая транскрипция если включена в настройках
-            if UserDefaults.standard.bool(forKey: "autoTranscribe") {
-                await coordinator.startTranscription()
-            }
-        }
-    }
-
-    private func stopRealtimeRecording() {
-        showRealtimeRecordingSheet = false
-
-        Task {
-            _ = await coordinator.stopRealtimeRecording()
-            // Автоматически запускаем саммаризацию
-            await coordinator.startRealtimeSummarization()
-        }
+        .disabled(viewModel.isConverting)
     }
 
     private func formatTime(_ time: TimeInterval) -> String {
@@ -342,54 +227,6 @@ struct RecordingView: View {
         }
     }
 
-    // MARK: - Import Handling
-
-    private func handleFileImport(result: Result<[URL], Error>) {
-        switch result {
-        case .success(let urls):
-            guard let url = urls.first else { return }
-
-            isImporting = true
-
-            Task {
-                do {
-                    let importer = AudioImporter()
-                    let audioData = try await importer.importAudio(from: url)
-                    importedAudioData = audioData
-                    isImporting = false
-                    showPresetPickerForImport = true
-                } catch {
-                    isImporting = false
-                    errorMessage = error.localizedDescription
-                    showError = true
-                    debugCaptureError(error, context: "Importing audio file")
-                }
-            }
-
-        case .failure(let error):
-            errorMessage = error.localizedDescription
-            showError = true
-            debugCaptureError(error, context: "File picker error")
-        }
-    }
-
-    private func finalizeImport(audioData: AudioImporter.ImportedAudio, preset: RecordingPreset) {
-        // Создаём Recording
-        let recording = Recording(
-            id: UUID(),
-            title: "\(preset.displayName) - \(audioData.originalFileName)",
-            duration: audioData.duration,
-            audioFileURL: audioData.url.path,
-            preset: preset
-        )
-
-        modelContext.insert(recording)
-        try? modelContext.save()
-
-        importedAudioData = nil
-
-        debugLog("Import completed: \(audioData.originalFileName), duration: \(audioData.duration)s", module: "RecordingView")
-    }
 }
 
 // MARK: - Pulse Animation

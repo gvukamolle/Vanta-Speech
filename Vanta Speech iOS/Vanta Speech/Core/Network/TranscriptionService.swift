@@ -253,18 +253,21 @@ actor TranscriptionService {
         let boundary = UUID().uuidString
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
 
-        let audioData = try Data(contentsOf: fileURL)
-        let fileSizeMB = Double(audioData.count) / (1024 * 1024)
+        let fileSizeBytes = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? NSNumber)?.doubleValue ?? 0
+        let fileSizeMB = fileSizeBytes / (1024 * 1024)
         debugLog("Uploading audio: \(fileURL.lastPathComponent), size: \(String(format: "%.2f", fileSizeMB)) MB", module: "TranscriptionService", level: .info)
 
-        let body = createTranscriptionBody(
-            audioData: audioData,
-            fileName: fileURL.lastPathComponent,
+        let bodyFileURL = try createTranscriptionBodyFile(
+            audioFileURL: fileURL,
             boundary: boundary
         )
-        request.httpBody = body
+        defer { try? FileManager.default.removeItem(at: bodyFileURL) }
 
-        let (data, response) = try await session.data(for: request)
+        if let bodySize = (try? FileManager.default.attributesOfItem(atPath: bodyFileURL.path)[.size] as? NSNumber)?.intValue {
+            request.setValue(String(bodySize), forHTTPHeaderField: "Content-Length")
+        }
+
+        let (data, response) = try await session.upload(for: request, fromFile: bodyFileURL)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw TranscriptionError.invalidResponse
@@ -284,30 +287,52 @@ actor TranscriptionService {
         return result.text
     }
 
-    private func createTranscriptionBody(audioData: Data, fileName: String, boundary: String) -> Data {
-        var body = Data()
+    private func createTranscriptionBodyFile(audioFileURL: URL, boundary: String) throws -> URL {
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("transcription_upload_\(UUID().uuidString)")
 
-        // Add file
+        FileManager.default.createFile(atPath: tempURL.path, contents: nil)
+        let output = try FileHandle(forWritingTo: tempURL)
+        defer { try? output.close() }
+
+        let fileName = audioFileURL.lastPathComponent
         let mimeType = getMimeType(for: fileName)
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(fileName)\"\r\n".data(using: .utf8)!)
-        body.append("Content-Type: \(mimeType)\r\n\r\n".data(using: .utf8)!)
-        body.append(audioData)
-        body.append("\r\n".data(using: .utf8)!)
+
+        try writeString("--\(boundary)\r\n", to: output)
+        try writeString("Content-Disposition: form-data; name=\"file\"; filename=\"\(fileName)\"\r\n", to: output)
+        try writeString("Content-Type: \(mimeType)\r\n\r\n", to: output)
+
+        let input = try FileHandle(forReadingFrom: audioFileURL)
+        defer { try? input.close() }
+
+        while true {
+            let data = try input.read(upToCount: 1_048_576)
+            guard let data, !data.isEmpty else { break }
+            try output.write(contentsOf: data)
+        }
+
+        try writeString("\r\n", to: output)
 
         // Add model
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"model\"\r\n\r\n".data(using: .utf8)!)
-        body.append("\(Self.transcriptionModel)\r\n".data(using: .utf8)!)
+        try writeString("--\(boundary)\r\n", to: output)
+        try writeString("Content-Disposition: form-data; name=\"model\"\r\n\r\n", to: output)
+        try writeString("\(Self.transcriptionModel)\r\n", to: output)
 
         // Add language hint (Russian)
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"language\"\r\n\r\n".data(using: .utf8)!)
-        body.append("ru\r\n".data(using: .utf8)!)
+        try writeString("--\(boundary)\r\n", to: output)
+        try writeString("Content-Disposition: form-data; name=\"language\"\r\n\r\n", to: output)
+        try writeString("ru\r\n", to: output)
 
-        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+        // Close boundary
+        try writeString("--\(boundary)--\r\n", to: output)
 
-        return body
+        return tempURL
+    }
+
+    private func writeString(_ string: String, to handle: FileHandle) throws {
+        if let data = string.data(using: .utf8) {
+            try handle.write(contentsOf: data)
+        }
     }
 
     // MARK: - Summary Generation
