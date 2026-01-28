@@ -124,6 +124,56 @@ struct VantaSurfaceModifier: ViewModifier {
     }
 }
 
+// MARK: - Blue Glass Card Modifier (for events)
+
+struct VantaBlueGlassCardModifier: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+
+    let cornerRadius: CGFloat
+    let shadowRadius: CGFloat
+    let padding: CGFloat
+    let tintOpacity: CGFloat?
+
+    private var isDark: Bool { colorScheme == .dark }
+    private var glassTintOpacity: Double {
+        if let override = tintOpacity {
+            return Double(override)
+        }
+        return isDark ? 0.12 : 0.25
+    }
+    private var shadowOpacity: Double { isDark ? 0.25 : 0.06 }
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 26, *) {
+            content
+                .padding(padding)
+                .background {
+                    RoundedRectangle(cornerRadius: cornerRadius)
+                        .fill(.clear)
+                }
+                .glassEffect(
+                    .regular.tint(Color.blueVibrant.opacity(glassTintOpacity)),
+                    in: RoundedRectangle(cornerRadius: cornerRadius)
+                )
+                .modifier(OptionalShadow(radius: shadowRadius, opacity: shadowOpacity))
+        } else {
+            content
+                .padding(padding)
+                .background {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: cornerRadius)
+                            .fill(.ultraThinMaterial)
+                        RoundedRectangle(cornerRadius: cornerRadius)
+                            .fill(Color.blueVibrant.opacity(glassTintOpacity))
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+                .modifier(OptionalShadow(radius: shadowRadius, opacity: shadowOpacity))
+        }
+    }
+}
+
 // MARK: - View Extensions
 
 extension View {
@@ -134,6 +184,20 @@ extension View {
         tintOpacity: CGFloat? = nil
     ) -> some View {
         modifier(VantaGlassCardModifier(
+            cornerRadius: cornerRadius,
+            shadowRadius: shadowRadius,
+            padding: padding,
+            tintOpacity: tintOpacity
+        ))
+    }
+
+    func vantaBlueGlassCard(
+        cornerRadius: CGFloat = 24,
+        shadowRadius: CGFloat = 0,
+        padding: CGFloat = 0,
+        tintOpacity: CGFloat? = nil
+    ) -> some View {
+        modifier(VantaBlueGlassCardModifier(
             cornerRadius: cornerRadius,
             shadowRadius: shadowRadius,
             padding: padding,

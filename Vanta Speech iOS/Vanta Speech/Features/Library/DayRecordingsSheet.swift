@@ -16,6 +16,10 @@ struct DayRecordingsSheet: View {
     @State private var importedAudioData: AudioImporter.ImportedAudio?
     @State private var isImporting = false
     @StateObject private var presetSettings = PresetSettings.shared
+    
+    // MARK: - Context Menu Sheet States
+    @State private var recordingForTranscription: Recording?
+    @State private var recordingForSummary: Recording?
 
     private let calendar = Calendar.current
 
@@ -77,14 +81,11 @@ struct DayRecordingsSheet: View {
                         showFileImporter = true
                     } label: {
                         Image(systemName: "square.and.arrow.down")
-                    }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Закрыть") {
-                        dismiss()
+                            .foregroundStyle(.primary)
                     }
                 }
             }
+            .presentationDragIndicator(.visible)
             .fileImporter(
                 isPresented: $showFileImporter,
                 allowedContentTypes: AudioImporter.supportedTypes,
@@ -120,6 +121,22 @@ struct DayRecordingsSheet: View {
                                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
                         }
                 }
+            }
+            // MARK: - Transcription Sheet
+            .sheet(item: $recordingForTranscription) { recording in
+                NavigationStack {
+                    TranscriptionView(recording: recording)
+                }
+                .adaptiveSheet()
+                .presentationDragIndicator(.visible)
+            }
+            // MARK: - Summary Sheet  
+            .sheet(item: $recordingForSummary) { recording in
+                NavigationStack {
+                    SummaryView(recording: recording)
+                }
+                .adaptiveSheet()
+                .presentationDragIndicator(.visible)
             }
         }
     }
@@ -164,15 +181,20 @@ struct DayRecordingsSheet: View {
                         ForEach(linkedRecordings) { recording in
                             LinkedRecordingCard(
                                 recording: recording,
-                                availableEvents: eventsForDate
-                            )
-                            .contextMenu {
-                                Button(role: .destructive) {
+                                availableEvents: eventsForDate,
+                                onTranscribe: !recording.isTranscribed ? {
+                                    transcribeRecording(recording)
+                                } : nil,
+                                onViewTranscription: recording.isTranscribed ? {
+                                    recordingForTranscription = recording
+                                } : nil,
+                                onViewSummary: recording.summaryText != nil ? {
+                                    recordingForSummary = recording
+                                } : nil,
+                                onDelete: {
                                     deleteRecording(recording)
-                                } label: {
-                                    Label("Удалить", systemImage: "trash")
                                 }
-                            }
+                            )
                         }
                     }
                 }
@@ -188,15 +210,20 @@ struct DayRecordingsSheet: View {
                         ForEach(unmatchedRecordings) { recording in
                             UnlinkedRecordingCard(
                                 recording: recording,
-                                availableEvents: eventsForDate
-                            )
-                            .contextMenu {
-                                Button(role: .destructive) {
+                                availableEvents: eventsForDate,
+                                onTranscribe: !recording.isTranscribed ? {
+                                    transcribeRecording(recording)
+                                } : nil,
+                                onViewTranscription: recording.isTranscribed ? {
+                                    recordingForTranscription = recording
+                                } : nil,
+                                onViewSummary: recording.summaryText != nil ? {
+                                    recordingForSummary = recording
+                                } : nil,
+                                onDelete: {
                                     deleteRecording(recording)
-                                } label: {
-                                    Label("Удалить", systemImage: "trash")
                                 }
-                            }
+                            )
                         }
                     }
                 }
@@ -213,6 +240,37 @@ struct DayRecordingsSheet: View {
             try? FileManager.default.removeItem(atPath: recording.audioFileURL)
         }
         modelContext.delete(recording)
+    }
+    
+    private func transcribeRecording(_ recording: Recording) {
+        Task {
+            recording.isUploading = true
+            try? modelContext.save()
+            
+            do {
+                let service = TranscriptionService()
+                let audioURL = URL(fileURLWithPath: recording.audioFileURL)
+                let preset = recording.preset ?? .projectMeeting
+                
+                let result = try await service.transcribe(audioFileURL: audioURL, preset: preset)
+                
+                await MainActor.run {
+                    recording.transcriptionText = result.transcription
+                    recording.isTranscribed = true
+                    recording.summaryText = result.summary
+                    if let generatedTitle = result.generatedTitle {
+                        recording.title = generatedTitle
+                    }
+                    recording.isUploading = false
+                    try? modelContext.save()
+                }
+            } catch {
+                await MainActor.run {
+                    recording.isUploading = false
+                    try? modelContext.save()
+                }
+            }
+        }
     }
 
     // MARK: - Import Actions
@@ -267,48 +325,81 @@ private struct EventPickerSheet: View {
     let events: [EASCalendarEvent]
     @Environment(\.dismiss) private var dismiss
 
-    private func formattedTime(_ event: EASCalendarEvent) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
-        return formatter.string(from: event.startTime)
-    }
-
     var body: some View {
         NavigationStack {
-            List(events) { event in
-                Button {
-                    recording.linkToMeeting(event)
-                    dismiss()
-                } label: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(event.subject)
-                            .font(.headline)
-                            .foregroundStyle(.primary)
-
-                        HStack(spacing: 12) {
-                            Label(formattedTime(event), systemImage: "clock")
-
-                            if !event.attendees.isEmpty {
-                                Label("\(event.humanAttendees.count) участн.", systemImage: "person.2")
-                            }
+            ScrollView {
+                LazyVStack(spacing: 12) {
+                    ForEach(events) { event in
+                        Button {
+                            recording.linkToMeeting(event)
+                            dismiss()
+                        } label: {
+                            EventPickerRow(event: event)
                         }
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .buttonStyle(.plain)
                     }
-                    .padding(.vertical, 4)
                 }
-                .buttonStyle(.plain)
+                .padding()
             }
             .navigationTitle("Выберите событие")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Отмена") {
-                        dismiss()
+        }
+        .tint(.primary)
+        .presentationDragIndicator(.visible)
+    }
+}
+
+// MARK: - Event Picker Row (синий стиль)
+
+private struct EventPickerRow: View {
+    let event: EASCalendarEvent
+    
+    private func formattedTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter.string(from: date)
+    }
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            // Иконка календаря
+            ZStack {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.blue.opacity(0.15))
+                    .frame(width: 44, height: 44)
+                
+                Image(systemName: "calendar")
+                    .font(.title3)
+                    .foregroundStyle(Color.blueVibrant)
+            }
+            
+            // Информация о встрече
+            VStack(alignment: .leading, spacing: 4) {
+                Text(event.subject)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                
+                HStack(spacing: 12) {
+                    Label(formattedTime(event.startTime), systemImage: "clock")
+                        .font(.caption)
+                    
+                    if !event.humanAttendees.isEmpty {
+                        Label("\(event.humanAttendees.count)", systemImage: "person.2")
+                            .font(.caption)
                     }
                 }
+                .foregroundStyle(.secondary)
             }
+            
+            Spacer()
+            
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
         }
+        .padding(12)
+        .vantaBlueGlassCard(cornerRadius: 16, shadowRadius: 0, tintOpacity: 0.12)
     }
 }
 
@@ -318,6 +409,12 @@ private struct UnlinkedRecordingCard: View {
     let recording: Recording
     let availableEvents: [EASCalendarEvent]
     @State private var showRecordingDetail = false
+    
+    // Callbacks для context menu
+    var onTranscribe: (() -> Void)?
+    var onViewTranscription: (() -> Void)?
+    var onViewSummary: (() -> Void)?
+    var onDelete: (() -> Void)?
 
     var body: some View {
         // Recording card - tap to open detail with link button inside
@@ -326,11 +423,15 @@ private struct UnlinkedRecordingCard: View {
             onTap: {
                 showRecordingDetail = true
             },
-            onGenerateSummary: recording.isTranscribed && recording.summaryText == nil ? {
+            onDelete: onDelete,
+            onTranscribe: onTranscribe,
+            onViewTranscription: onViewTranscription,
+            onGenerateSummary: recording.isTranscribed && recording.summaryText == nil && !recording.isSummaryGenerating ? {
                 Task {
                     await RecordingCoordinator.shared.generateSummary(for: recording)
                 }
-            } : nil
+            } : nil,
+            onViewSummary: onViewSummary
         )
         .sheet(isPresented: $showRecordingDetail) {
             NavigationStack {
@@ -351,6 +452,12 @@ private struct LinkedRecordingCard: View {
     let recording: Recording
     let availableEvents: [EASCalendarEvent]
     @State private var showRecordingDetail = false
+    
+    // Callbacks для context menu
+    var onTranscribe: (() -> Void)?
+    var onViewTranscription: (() -> Void)?
+    var onViewSummary: (() -> Void)?
+    var onDelete: (() -> Void)?
 
     var body: some View {
         RecordingCard(
@@ -358,11 +465,15 @@ private struct LinkedRecordingCard: View {
             onTap: {
                 showRecordingDetail = true
             },
-            onGenerateSummary: recording.isTranscribed && recording.summaryText == nil ? {
+            onDelete: onDelete,
+            onTranscribe: onTranscribe,
+            onViewTranscription: onViewTranscription,
+            onGenerateSummary: recording.isTranscribed && recording.summaryText == nil && !recording.isSummaryGenerating ? {
                 Task {
                     await RecordingCoordinator.shared.generateSummary(for: recording)
                 }
-            } : nil
+            } : nil,
+            onViewSummary: onViewSummary
         )
         .sheet(isPresented: $showRecordingDetail) {
             NavigationStack {
@@ -377,55 +488,90 @@ private struct LinkedRecordingCard: View {
     }
 }
 
-// MARK: - Event Card (Compact)
+// MARK: - Event Card (Compact) - со стеклянным синим стилем
 
 private struct EventCard: View {
     let event: EASCalendarEvent
     @State private var showDetail = false
 
-    private var formattedTime: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
-        return formatter.string(from: event.startTime)
-    }
-
     var body: some View {
         Button {
             showDetail = true
         } label: {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
+            HStack(spacing: 12) {
+                // Иконка календаря
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.blue.opacity(0.15))
+                        .frame(width: 44, height: 44)
+                    
                     Image(systemName: "calendar")
-                        .foregroundStyle(.blue)
+                        .font(.title3)
+                        .foregroundStyle(Color.blueVibrant)
+                }
+                
+                // Информация о встрече
+                VStack(alignment: .leading, spacing: 4) {
                     Text(event.subject)
                         .font(.headline)
                         .foregroundStyle(.primary)
-                }
-
-                HStack(spacing: 12) {
-                    Label(formattedTime, systemImage: "clock")
-
-                    if !event.attendees.isEmpty {
-                        Label("\(event.humanAttendees.count) участн.", systemImage: "person.2")
+                        .lineLimit(2)
+                    
+                    HStack(spacing: 12) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "clock")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text("\(formatTime(event.startTime)) - \(formatTime(event.endTime))")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        
+                        if !event.humanAttendees.isEmpty {
+                            HStack(spacing: 4) {
+                                Image(systemName: "person.2")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Text("\(event.humanAttendees.count)")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
                     }
-
+                    
                     if let location = event.location, !location.isEmpty {
-                        Label(location, systemImage: "mappin")
-                            .lineLimit(1)
+                        HStack(spacing: 4) {
+                            Image(systemName: "mappin")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                            Text(location)
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                        }
                     }
                 }
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding()
-            .background(Color(.secondarySystemGroupedBackground))
-            .cornerRadius(12)
+            .padding(12)
         }
         .buttonStyle(.plain)
+        .vantaBlueGlassCard(cornerRadius: 16, shadowRadius: 0, tintOpacity: 0.12)
         .sheet(isPresented: $showDetail) {
             EventDetailSheet(event: event)
+                .presentationDragIndicator(.visible)
         }
+    }
+    
+    private func formatTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter.string(from: date)
     }
 }
 

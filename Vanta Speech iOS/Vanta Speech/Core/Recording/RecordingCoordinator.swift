@@ -516,6 +516,45 @@ final class RecordingCoordinator: ObservableObject {
 
         return recording
     }
+    
+    /// Остановить real-time запись и удалить аудио без сохранения (когда нет транскрипции)
+    func stopRealtimeRecordingAndDiscard() async {
+        guard let manager = realtimeManager else { return }
+        
+        // Останавливаем запись и локальную диктовку
+        _ = realtimeSpeechRecognizer.stopRecording()
+        
+        // Ждём завершения всех pending транскрипций
+        await manager.waitForCompletion()
+        
+        // Получаем URL чанков для удаления
+        let chunkURLs = manager.getProcessedChunkURLs()
+        
+        // Очищаем временные файлы чанков
+        manager.cleanupChunks()
+        
+        // Удаляем continuous recording файл если есть
+        if let continuousURL = realtimeSpeechRecognizer.continuousRecordingURL,
+           FileManager.default.fileExists(atPath: continuousURL.path) {
+            try? FileManager.default.removeItem(at: continuousURL)
+        }
+        
+        // Удаляем все чанки
+        for url in chunkURLs {
+            try? FileManager.default.removeItem(at: url)
+        }
+        
+        // Очищаем состояние
+        realtimeSpeechRecognizer.onPhraseCompleted = nil
+        realtimeCancellables.removeAll()
+        isRealtimeMode = false
+        currentPreset = nil
+        currentRecordingId = nil
+        realtimeManager = nil
+        pendingTranscription = nil
+        
+        debugLog("Realtime recording discarded (no transcription)", module: "RecordingCoordinator")
+    }
 
     private func copyFallbackChunk(from chunkURL: URL) -> URL? {
         let ext = chunkURL.pathExtension.isEmpty ? "m4a" : chunkURL.pathExtension

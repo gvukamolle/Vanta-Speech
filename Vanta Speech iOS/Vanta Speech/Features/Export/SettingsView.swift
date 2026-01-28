@@ -98,6 +98,7 @@ struct SettingsView: View {
                             Text(theme.displayName).tag(theme.rawValue)
                         }
                     }
+                    .tint(.primary)
                 }
 
                 Section("Расшифровка") {
@@ -271,12 +272,16 @@ struct PresetSettingsView: View {
             }
 
             Section {
-                Button("Сбросить настройки") {
+                Button {
                     settings.resetToDefaults()
+                } label: {
+                    Text("Сбросить настройки")
+                        .foregroundStyle(.red)
                 }
             }
         }
         .navigationTitle("Типы встреч")
+        .tint(.primary)
         .environment(\.editMode, $editMode)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -299,7 +304,7 @@ private struct PresetRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: preset.icon)
-                .foregroundStyle(isEnabled ? Color.pinkVibrant : .secondary)
+                .foregroundStyle(isEnabled ? .primary : .secondary)
                 .frame(width: 24)
 
             Text(preset.displayName)

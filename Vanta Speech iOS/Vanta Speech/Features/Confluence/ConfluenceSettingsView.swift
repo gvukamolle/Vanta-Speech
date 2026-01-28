@@ -36,6 +36,7 @@ struct ConfluenceSettingsView: View {
                     pageTitle: pageTitle
                 )
             }
+            .presentationDragIndicator(.visible)
         }
         .onChange(of: manager.lastError) { _, error in
             if let error = error {

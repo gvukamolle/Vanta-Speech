@@ -128,6 +128,11 @@ final class RecordingViewModel: ObservableObject {
     }
 
     var upcomingMeeting: EASCalendarEvent? {
+        upcomingMeetings.first
+    }
+    
+    /// Две ближайшие встречи по времени начала (для выбора в RecordingOptionsSheet)
+    var upcomingMeetings: [EASCalendarEvent] {
         let now = Date()
         let twoHoursLater = now.addingTimeInterval(2 * 60 * 60)
 
@@ -138,7 +143,8 @@ final class RecordingViewModel: ObservableObject {
                 return isOngoing || isUpcoming
             }
             .sorted { $0.startTime < $1.startTime }
-            .first
+            .prefix(2)
+            .map { $0 }
     }
 
     // MARK: - Actions

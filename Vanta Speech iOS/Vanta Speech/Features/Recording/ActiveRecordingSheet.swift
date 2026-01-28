@@ -9,12 +9,6 @@ struct ActiveRecordingSheet: View {
 
     var body: some View {
         VStack(spacing: 20) {
-            // Drag indicator
-            Capsule()
-                .fill(Color(.systemGray4))
-                .frame(width: 36, height: 5)
-                .padding(.top, 8)
-
             // Preset indicator
             HStack(spacing: 8) {
                 Image(systemName: preset.icon)
@@ -22,6 +16,7 @@ struct ActiveRecordingSheet: View {
             }
             .font(.subheadline)
             .foregroundStyle(.secondary)
+            .padding(.top, 20)
 
             Spacer()
 
@@ -89,7 +84,7 @@ struct ActiveRecordingSheet: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.systemBackground))
         .presentationDetents([.fraction(0.5)])
-        .presentationDragIndicator(.hidden)
+        .presentationDragIndicator(.visible)
         .interactiveDismissDisabled(false)
     }
 

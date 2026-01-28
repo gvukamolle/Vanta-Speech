@@ -5,7 +5,10 @@ struct RecordingCard: View {
     let recording: Recording
     var onTap: () -> Void = {}
     var onDelete: (() -> Void)?
+    var onTranscribe: (() -> Void)?
+    var onViewTranscription: (() -> Void)?
     var onGenerateSummary: (() -> Void)?
+    var onViewSummary: (() -> Void)?
 
     var body: some View {
         Button(action: onTap) {
@@ -120,18 +123,86 @@ struct RecordingCard: View {
         .buttonStyle(.plain)
         .contentShape(Rectangle())
         .contextMenu {
-            Button {
-                onTap()
-            } label: {
-                Label("Открыть", systemImage: "arrow.right.circle")
+            // MARK: - Динамические кнопки в зависимости от состояния записи
+            
+            // Случай 1: Нет расшифровки → кнопка "Расшифровать"
+            if !recording.isTranscribed, let onTranscribe {
+                Button {
+                    onTranscribe()
+                } label: {
+                    Label {
+                        Text("Расшифровать")
+                            .foregroundStyle(.primary)
+                    } icon: {
+                        Image(systemName: "text.bubble")
+                            .foregroundStyle(.primary)
+                    }
+                }
+                .tint(.primary)
             }
-
+            
+            // Случай 2: Есть расшифровка → кнопка "Расшифровка"
+            if recording.isTranscribed, let onViewTranscription {
+                Button {
+                    onViewTranscription()
+                } label: {
+                    Label {
+                        Text("Расшифровка")
+                            .foregroundStyle(.primary)
+                    } icon: {
+                        Image(systemName: "text.bubble.fill")
+                            .foregroundStyle(.primary)
+                    }
+                }
+                .tint(.primary)
+            }
+            
+            // Случай 3: Есть расшифровка, но нет саммари → кнопка "Сделать саммари"
+            if recording.isTranscribed && recording.summaryText == nil && !recording.isSummaryGenerating, let onGenerateSummary {
+                Button {
+                    onGenerateSummary()
+                } label: {
+                    Label {
+                        Text("Сделать саммари")
+                            .foregroundStyle(.primary)
+                    } icon: {
+                        Image(systemName: "sparkles")
+                            .foregroundStyle(.primary)
+                    }
+                }
+                .tint(.primary)
+            }
+            
+            // Случай 4: Есть саммари → кнопка "Саммари"
+            if recording.summaryText != nil, let onViewSummary {
+                Button {
+                    onViewSummary()
+                } label: {
+                    Label {
+                        Text("Саммари")
+                            .foregroundStyle(.primary)
+                    } icon: {
+                        Image(systemName: "doc.text.fill")
+                            .foregroundStyle(.primary)
+                    }
+                }
+                .tint(.primary)
+            }
+            
+            // Кнопка "Удалить" всегда внизу, красным
             if let onDelete {
                 Button(role: .destructive) {
                     onDelete()
                 } label: {
-                    Label("Удалить", systemImage: "trash")
+                    Label {
+                        Text("Удалить")
+                            .foregroundStyle(.red)
+                    } icon: {
+                        Image(systemName: "trash")
+                            .foregroundStyle(.red)
+                    }
                 }
+                .tint(.red)
             }
         }
     }

@@ -33,6 +33,11 @@ struct RecordingView: View {
     private var upcomingMeeting: EASCalendarEvent? {
         viewModel.upcomingMeeting
     }
+    
+    /// Две ближайшие встречи по времени начала (для выбора в RecordingOptionsSheet)
+    private var upcomingMeetings: [EASCalendarEvent] {
+        viewModel.upcomingMeetings
+    }
 
     var body: some View {
         NavigationStack {
@@ -151,12 +156,12 @@ struct RecordingView: View {
             // Sheet для выбора пресета с предложением привязки к встрече
             .sheet(isPresented: $viewModel.showRecordingOptionsSheet) {
                 RecordingOptionsSheet(
-                    upcomingMeeting: upcomingMeeting,
+                    upcomingMeetings: upcomingMeetings,
                     presets: viewModel.enabledPresets,
                     isRealtimeMode: isRealtimeMode,
-                    onSelectPreset: { preset, linkToMeeting in
+                    onSelectPreset: { preset, selectedMeeting in
                         viewModel.showRecordingOptionsSheet = false
-                        if linkToMeeting, let meeting = upcomingMeeting {
+                        if let meeting = selectedMeeting {
                             MeetingRecordingLink.shared.pendingMeetingEvent = meeting
                         }
                         viewModel.startRecordingWithPreset(preset, realtime: isRealtimeMode)
@@ -357,8 +362,13 @@ struct ImportPresetPickerSheet: View {
                         Button {
                             onSelect(preset)
                         } label: {
-                            Label(preset.displayName, systemImage: preset.icon)
-                                .foregroundStyle(.primary)
+                            Label {
+                                Text(preset.displayName)
+                                    .foregroundStyle(.primary)
+                            } icon: {
+                                Image(systemName: preset.icon)
+                                    .foregroundStyle(.primary)
+                            }
                         }
                     }
                 } header: {
@@ -369,14 +379,9 @@ struct ImportPresetPickerSheet: View {
             }
             .navigationTitle("Импорт аудио")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Отмена") {
-                        onCancel()
-                    }
-                }
-            }
         }
+        .tint(.primary)
+        .presentationDragIndicator(.visible)
     }
 
     private func formatDuration(_ duration: TimeInterval) -> String {

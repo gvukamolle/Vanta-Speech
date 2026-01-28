@@ -131,6 +131,35 @@ struct EASCalendarEvent: Codable, Equatable, Identifiable {
             result = result.replacingOccurrences(of: entity, with: replacement)
         }
         
+        // Replace numeric HTML entities (e.g., &#1084; -> м)
+        let numericEntityPattern = "&#(\\d+);"
+        if let numericRegex = try? NSRegularExpression(pattern: numericEntityPattern, options: []) {
+            let matches = numericRegex.matches(in: result, options: [], range: NSRange(location: 0, length: result.utf16.count))
+            // Process matches in reverse order to preserve ranges
+            for match in matches.reversed() {
+                if let numberRange = Range(match.range(at: 1), in: result),
+                   let number = Int(result[numberRange]),
+                   let scalar = UnicodeScalar(number) {
+                    let fullRange = Range(match.range, in: result)!
+                    result.replaceSubrange(fullRange, with: String(Character(scalar)))
+                }
+            }
+        }
+        
+        // Replace hex HTML entities (e.g., &#x43C; -> м)
+        let hexEntityPattern = "&#x([0-9A-Fa-f]+);"
+        if let hexRegex = try? NSRegularExpression(pattern: hexEntityPattern, options: []) {
+            let matches = hexRegex.matches(in: result, options: [], range: NSRange(location: 0, length: result.utf16.count))
+            for match in matches.reversed() {
+                if let hexRange = Range(match.range(at: 1), in: result),
+                   let number = Int(result[hexRange], radix: 16),
+                   let scalar = UnicodeScalar(number) {
+                    let fullRange = Range(match.range, in: result)!
+                    result.replaceSubrange(fullRange, with: String(Character(scalar)))
+                }
+            }
+        }
+        
         // Remove HTML tags using regex
         let pattern = "<[^>]+>"
         if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {

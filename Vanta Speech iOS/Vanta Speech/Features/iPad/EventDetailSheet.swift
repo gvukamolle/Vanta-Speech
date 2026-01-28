@@ -39,6 +39,7 @@ struct EventDetailSheet: View {
                 Section("Время") {
                     HStack {
                         Label("Начало", systemImage: "clock")
+                            .foregroundStyle(.secondary)
                         Spacer()
                         Text(formatTime(event.startTime))
                             .foregroundStyle(.secondary)
@@ -47,6 +48,7 @@ struct EventDetailSheet: View {
                     
                     HStack {
                         Label("Окончание", systemImage: "clock.fill")
+                            .foregroundStyle(.secondary)
                         Spacer()
                         Text(formatTime(event.endTime))
                             .foregroundStyle(.secondary)
@@ -56,6 +58,7 @@ struct EventDetailSheet: View {
                     // Длительность
                     HStack {
                         Label("Длительность", systemImage: "hourglass")
+                            .foregroundStyle(.secondary)
                         Spacer()
                         Text(durationString(from: event.startTime, to: event.endTime))
                             .foregroundStyle(.secondary)
@@ -171,16 +174,8 @@ struct EventDetailSheet: View {
             .listStyle(.insetGrouped)
             .navigationTitle("Событие")
             .navigationBarTitleDisplayMode(.large)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Готово") {
-                        dismiss()
-                    }
-                    .font(.headline)
-                    .foregroundStyle(Color.pinkVibrant)
-                }
-            }
         }
+        .presentationDragIndicator(.visible)
     }
     
     // MARK: - Helpers

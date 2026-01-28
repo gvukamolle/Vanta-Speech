@@ -10,12 +10,14 @@ struct CalendarView: View {
     private let weekdaySymbols = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 12) {
             monthNavigationHeader
 
             weekdayHeaderRow
+                .padding(.horizontal, 4)
 
             daysGrid
+                .padding(.horizontal, 4)
         }
     }
 
@@ -63,7 +65,7 @@ struct CalendarView: View {
     // MARK: - Days Grid
 
     private var daysGrid: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 4) {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 7), spacing: 8) {
             ForEach(Array(daysInMonth.enumerated()), id: \.offset) { _, day in
                 CalendarDayView(
                     day: day,
@@ -79,7 +81,7 @@ struct CalendarView: View {
                 )
             }
         }
-        .frame(height: 280) // Уменьшаем высоту сетки дней
+        .frame(height: 260) // Уменьшаем высоту сетки дней
     }
 
     // MARK: - Helpers

@@ -268,6 +268,7 @@ struct iPadSettingsContentView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+                .tint(.primary)
             }
             .padding()
             .frame(maxWidth: .infinity, alignment: .leading)

@@ -103,6 +103,10 @@ struct iPadMainView: View {
     private var upcomingMeeting: EASCalendarEvent? {
         viewModel.upcomingMeeting
     }
+    
+    private var upcomingMeetings: [EASCalendarEvent] {
+        viewModel.upcomingMeetings
+    }
 
     private var todayMeetings: [EASCalendarEvent] {
         calendarManager.cachedEvents.filter { event in
@@ -229,12 +233,12 @@ struct iPadMainView: View {
         }
         .sheet(isPresented: $viewModel.showRecordingOptionsSheet) {
             RecordingOptionsSheet(
-                upcomingMeeting: upcomingMeeting,
+                upcomingMeetings: upcomingMeetings,
                 presets: viewModel.enabledPresets,
                 isRealtimeMode: isRealtimeMode,
-                onSelectPreset: { preset, linkToMeeting in
+                onSelectPreset: { preset, selectedMeeting in
                     viewModel.showRecordingOptionsSheet = false
-                    if linkToMeeting, let meeting = upcomingMeeting {
+                    if let meeting = selectedMeeting {
                         MeetingRecordingLink.shared.pendingMeetingEvent = meeting
                     }
                     viewModel.startRecordingWithPreset(preset, realtime: isRealtimeMode)
@@ -318,63 +322,6 @@ struct iPadMainView: View {
             }
             .padding(.horizontal)
 
-            Divider()
-                .padding(.top, 16)
-
-            // Заголовок списка
-            HStack {
-                Text(listTitle)
-                    .font(.headline)
-
-                Spacer()
-
-                if selectedDate != nil {
-                    Button("Сбросить") {
-                        selectedDate = nil
-                    }
-                    .font(.subheadline)
-                }
-
-                Text("\(displayedRecordings.count)")
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color(.systemGray5))
-                    .clipShape(Capsule())
-            }
-            .padding()
-            .padding(.top, 8)
-
-            // Записи
-            if displayedRecordings.isEmpty {
-                emptyRecordingsView
-            } else {
-                LazyVStack(spacing: 12) {
-                    ForEach(displayedRecordings) { recording in
-                        RecordingCard(
-                            recording: recording,
-                            onTap: {
-                                selectedRecording = recording
-                            },
-                            onDelete: {
-                                deleteRecording(recording)
-                            },
-                            onGenerateSummary: recording.isTranscribed && recording.summaryText == nil ? {
-                                Task {
-                                    await coordinator.generateSummary(for: recording)
-                                }
-                            } : nil
-                        )
-                        .background(
-                            RoundedRectangle(cornerRadius: 24)
-                                .fill(selectedRecording?.id == recording.id ? Color.pinkVibrant.opacity(0.1) : Color.clear)
-                        )
-                    }
-                }
-                .padding(.horizontal)
-                .padding(.bottom)
-            }
         }
     }
 

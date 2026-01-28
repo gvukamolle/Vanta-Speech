@@ -11,9 +11,9 @@ struct CalendarDayView: View {
 
     private let calendar = Calendar.current
 
-    /// Размер ячейки: 40pt на iPad, 36pt на iPhone (уменьшено для лучшей компоновки)
+    /// Размер ячейки: 44pt на iPad, 38pt на iPhone (для лучшей компоновки)
     private var cellSize: CGFloat {
-        horizontalSizeClass == .regular ? 40 : 36
+        horizontalSizeClass == .regular ? 44 : 38
     }
 
     var body: some View {

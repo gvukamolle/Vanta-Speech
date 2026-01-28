@@ -27,13 +27,6 @@ struct ConfluenceLocationPickerView: View {
             }
             .navigationTitle(selectedSpace?.name ?? "Выбор пространства")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Отмена") {
-                        dismiss()
-                    }
-                }
-            }
             .navigationDestination(for: ConfluencePage.self) { page in
                 ChildPagesListView(
                     parentPage: page,

@@ -69,6 +69,16 @@ struct DayDetailSheet: View {
         }
     }
     
+    // Recordings linked to events
+    private var linkedRecordings: [Recording] {
+        dayRecordings.filter { $0.hasLinkedMeeting }
+    }
+    
+    // Recordings without events
+    private var unmatchedRecordings: [Recording] {
+        dayRecordings.filter { !$0.hasLinkedMeeting }
+    }
+    
     // MARK: - Body
     
     var body: some View {
@@ -94,9 +104,14 @@ struct DayDetailSheet: View {
                             eventsSection
                         }
                         
-                        // Секция: Записи
-                        if !dayRecordings.isEmpty {
-                            recordingsSection
+                        // Секция: Связанные записи
+                        if !linkedRecordings.isEmpty {
+                            linkedRecordingsSection
+                        }
+                        
+                        // Секция: Несвязанные записи
+                        if !unmatchedRecordings.isEmpty {
+                            unmatchedRecordingsSection
                         }
                         
                         // Пустое состояние
@@ -225,9 +240,9 @@ struct DayDetailSheet: View {
         }
     }
     
-    // MARK: - Recordings Section
+    // MARK: - Linked Recordings Section
     
-    private var recordingsSection: some View {
+    private var linkedRecordingsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Записи")
                 .font(.title3)
@@ -235,7 +250,40 @@ struct DayDetailSheet: View {
                 .foregroundStyle(.primary)
             
             LazyVStack(spacing: 12) {
-                ForEach(dayRecordings) { recording in
+                ForEach(linkedRecordings) { recording in
+                    RecordingCard(
+                        recording: recording,
+                        onTap: {
+                            onDismiss()
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                onOpenRecording?(recording)
+                            }
+                        },
+                        onDelete: {
+                            deleteRecording(recording)
+                        },
+                        onGenerateSummary: recording.isTranscribed && recording.summaryText == nil ? {
+                            Task {
+                                await coordinator.generateSummary(for: recording)
+                            }
+                        } : nil
+                    )
+                }
+            }
+        }
+    }
+    
+    // MARK: - Unmatched Recordings Section
+    
+    private var unmatchedRecordingsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Без встречи")
+                .font(.title3)
+                .fontWeight(.bold)
+                .foregroundStyle(.primary)
+            
+            LazyVStack(spacing: 12) {
+                ForEach(unmatchedRecordings) { recording in
                     RecordingCard(
                         recording: recording,
                         onTap: {
@@ -416,8 +464,7 @@ private struct DayEventRow: View {
                 .foregroundStyle(.tertiary)
         }
         .padding(12)
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .vantaBlueGlassCard(cornerRadius: 16, shadowRadius: 0, tintOpacity: 0.12)
     }
     
     private func formatTime(_ date: Date) -> String {
@@ -463,8 +510,13 @@ private struct ImportPresetPickerSheetForDay: View {
                         Button {
                             onSelect(preset)
                         } label: {
-                            Label(preset.displayName, systemImage: preset.icon)
-                                .foregroundStyle(.primary)
+                            Label {
+                                Text(preset.displayName)
+                                    .foregroundStyle(.primary)
+                            } icon: {
+                                Image(systemName: preset.icon)
+                                    .foregroundStyle(.primary)
+                            }
                         }
                     }
                 } header: {
@@ -475,6 +527,7 @@ private struct ImportPresetPickerSheetForDay: View {
             }
             .navigationTitle("Импорт аудио")
             .navigationBarTitleDisplayMode(.inline)
+            .tint(.primary)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Отмена") {

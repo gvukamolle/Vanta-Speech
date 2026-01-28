@@ -204,8 +204,7 @@ private struct MeetingCard: View {
                     .foregroundStyle(.tertiary)
             }
             .padding(12)
-            .background(Color(.secondarySystemGroupedBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .vantaBlueGlassCard(cornerRadius: 16, shadowRadius: 0, tintOpacity: 0.12)
             .overlay(
                 RoundedRectangle(cornerRadius: 16)
                     .stroke(isOngoing ? Color.green.opacity(0.3) : Color.clear, lineWidth: 1)

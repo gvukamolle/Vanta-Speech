@@ -30,7 +30,7 @@ struct LibraryView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 24) {
+                VStack(spacing: 16) {
                     calendarCard
 
                     if !recordings.isEmpty {

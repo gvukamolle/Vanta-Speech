@@ -11,6 +11,8 @@ struct RealtimeRecordingSheet: View {
 
     @State private var showBackgroundWarning = false
     @State private var wasBackgrounded = false
+    @State private var showNoTranscriptionWarning = false
+    @State private var isStopping = false
 
     init(preset: RecordingPreset, onStop: @escaping () -> Void) {
         self.preset = preset
@@ -41,7 +43,7 @@ struct RealtimeRecordingSheet: View {
         .background(Color(.systemBackground))
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
-        .interactiveDismissDisabled(speechRecognizer.isRecording)
+        .interactiveDismissDisabled(speechRecognizer.isRecording || isStopping)
         .onChange(of: scenePhase) { oldPhase, newPhase in
             handleScenePhaseChange(from: oldPhase, to: newPhase)
         }
@@ -51,10 +53,42 @@ struct RealtimeRecordingSheet: View {
                 wasBackgrounded = false
             }
             Button("Остановить", role: .destructive) {
-                onStop()
+                confirmStopRecording()
             }
         } message: {
             Text("Приложение было свёрнуто. Real-time транскрипция работает только при активном приложении.")
+        }
+        .alert("Нет расшифровки", isPresented: $showNoTranscriptionWarning) {
+            Button("Удалить запись") {
+                discardRecording()
+            }
+        } message: {
+            Text("Запись не содержит распознанной речи. Возможно, микрофон не работал или запись была слишком короткой. Запись не будет сохранена.")
+        }
+    }
+    
+    // MARK: - Recording Control
+    
+    private func confirmStopRecording() {
+        // Check if we have any transcription
+        let hasTranscription = !(coordinator.realtimeManager?.paragraphs.isEmpty ?? true)
+        let hasInterimText = !speechRecognizer.interimText.isEmpty
+        
+        if !hasTranscription && !hasInterimText {
+            // No transcription at all - show warning
+            showNoTranscriptionWarning = true
+        } else {
+            onStop()
+        }
+    }
+    
+    private func discardRecording() {
+        // Stop recording without saving
+        Task {
+            isStopping = true
+            await coordinator.stopRealtimeRecordingAndDiscard()
+            isStopping = false
+            onStop()
         }
     }
 
@@ -175,7 +209,7 @@ struct RealtimeRecordingSheet: View {
                         HStack(spacing: 6) {
                             RecordingIndicatorDot()
                             Text("Запись")
-                                .foregroundStyle(Color.pinkVibrant)
+                                .foregroundStyle(.primary)
                         }
                     } else if speechRecognizer.isInterrupted {
                         HStack(spacing: 6) {
@@ -232,10 +266,11 @@ struct RealtimeRecordingSheet: View {
             .buttonStyle(VantaIconButtonStyle(size: 56, isPrimary: false))
 
             // Stop button
-            Button(action: onStop) {
+            Button(action: confirmStopRecording) {
                 Image(systemName: "stop.fill")
             }
             .buttonStyle(VantaIconButtonStyle(size: 56, isPrimary: true))
+            .disabled(isStopping)
         }
         .padding()
         .padding(.bottom, 16)
@@ -374,7 +409,7 @@ private struct RecordingIndicatorDot: View {
     
     var body: some View {
         Circle()
-            .fill(Color.pinkVibrant)
+            .fill(Color.primary)
             .frame(width: 8, height: 8)
             .scaleEffect(isPulsing ? 1.2 : 1.0)
             .opacity(isPulsing ? 0.8 : 1.0)

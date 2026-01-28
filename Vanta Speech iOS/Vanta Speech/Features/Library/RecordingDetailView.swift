@@ -23,6 +23,7 @@ struct RecordingDetailView: View {
     @State private var showContinueConfirmation = false
     @State private var showEventPicker = false
     @State private var showMeetingDetail = false
+    @State private var showMeetingActions = false
 
     // Title editing
     @State private var showTitleEditor = false
@@ -35,7 +36,7 @@ struct RecordingDetailView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 24) {
+            VStack(spacing: 16) {
                 // Recording Header Card
                 headerCard
 
@@ -74,6 +75,7 @@ struct RecordingDetailView: View {
                     shareMenuContent
                 } label: {
                     Image(systemName: "ellipsis.circle")
+                        .foregroundStyle(.primary)
                 }
             }
         }
@@ -119,60 +121,34 @@ struct RecordingDetailView: View {
     // MARK: - Header Card
 
     private var headerCard: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 12) {
             Button {
                 editedTitle = recording.title
                 showTitleEditor = true
             } label: {
                 HStack(spacing: 8) {
                     Text(recording.title)
-                        .font(.title2)
+                        .font(.title3)
                         .fontWeight(.bold)
                         .multilineTextAlignment(.center)
                         .foregroundStyle(.primary)
 
                     Image(systemName: "pencil")
-                        .font(.subheadline)
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
             .buttonStyle(.plain)
 
-            HStack(spacing: 24) {
+            HStack(spacing: 16) {
                 Label(recording.formattedDate, systemImage: "calendar")
                 Label(recording.formattedDuration, systemImage: "clock")
             }
             .font(.subheadline)
             .foregroundStyle(.secondary)
-
-            // Status badges
-            HStack(spacing: 12) {
-                statusBadge(
-                    text: "M4A",
-                    color: .blueVibrant
-                )
-
-                if recording.isTranscribed {
-                    statusBadge(
-                        text: "Расшифровано",
-                        color: .pinkVibrant
-                    )
-                }
-
-                if recording.isUploading {
-                    HStack(spacing: 4) {
-                        ProgressView()
-                            .scaleEffect(0.7)
-                        Text("Обработка...")
-                    }
-                    .font(.caption)
-                    .foregroundStyle(Color.blueVibrant)
-                }
-            }
-            .padding(.top, 4)
         }
-        .padding(20)
-        .vantaGlassCard(cornerRadius: 28, shadowRadius: 0, tintOpacity: 0.15)
+        .padding(16)
+        .vantaGlassCard(cornerRadius: 20, shadowRadius: 0, tintOpacity: 0.15)
     }
 
     private func statusBadge(text: String, color: Color) -> some View {
@@ -252,7 +228,7 @@ struct RecordingDetailView: View {
                     } label: {
                         Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
                     }
-                    .buttonStyle(VantaIconButtonStyle(size: 64, isPrimary: true))
+                    .buttonStyle(VantaIconButtonStyle(size: 56, isPrimary: true))
 
                     Button {
                         player.seek(to: min(player.duration, player.currentTime + 15))
@@ -264,8 +240,8 @@ struct RecordingDetailView: View {
                 }
             }
         }
-        .padding(20)
-        .vantaGlassCard(cornerRadius: 28, shadowRadius: 0, tintOpacity: 0.15)
+        .padding(16)
+        .vantaGlassCard(cornerRadius: 20, shadowRadius: 0, tintOpacity: 0.15)
     }
 
     // MARK: - Continue Recording Button
@@ -279,14 +255,14 @@ struct RecordingDetailView: View {
                 startContinueRecording()
             }
         } label: {
-            HStack {
+            HStack(spacing: 8) {
                 Image(systemName: "mic.badge.plus")
                 Text("Продолжить запись")
                     .fontWeight(.medium)
             }
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
+            .padding(.vertical, 14)
             .background(Color(.secondarySystemGroupedBackground))
             .clipShape(RoundedRectangle(cornerRadius: 16))
         }
@@ -301,7 +277,7 @@ struct RecordingDetailView: View {
             Button {
                 transcribeRecording()
             } label: {
-                HStack {
+                HStack(spacing: 8) {
                     if isAnyTranscribing {
                         ProgressView()
                             .tint(.primary)
@@ -314,7 +290,7 @@ struct RecordingDetailView: View {
                 .foregroundStyle(.primary)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
-                .vantaGlassProminent(cornerRadius: 20, tintOpacity: 0.15)
+                .vantaGlassProminent(cornerRadius: 16, tintOpacity: 0.15)
             }
             .buttonStyle(.plain)
             .disabled(isAnyTranscribing)
@@ -327,7 +303,7 @@ struct RecordingDetailView: View {
                         .font(.subheadline)
                         .fontWeight(.medium)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
+                        .padding(.vertical, 8)
                 }
                 .buttonStyle(.bordered)
                 .tint(.red)
@@ -344,17 +320,17 @@ struct RecordingDetailView: View {
                 Button {
                     showTranscriptionSheet = true
                 } label: {
-                    HStack(spacing: 12) {
+                    HStack(spacing: 10) {
                         ZStack {
                             Circle()
                                 .fill(.ultraThinMaterial)
                             Circle()
                                 .fill(Color.pinkVibrant.opacity(0.15))
                             Image(systemName: "text.bubble")
-                                .font(.body)
+                                .font(.callout)
                                 .foregroundStyle(Color.pinkVibrant)
                         }
-                        .frame(width: 40, height: 40)
+                        .frame(width: 36, height: 36)
 
                         Text("Расшифровка")
                             .font(.subheadline)
@@ -363,7 +339,7 @@ struct RecordingDetailView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(12)
-                    .vantaGlassCard(cornerRadius: 16, shadowRadius: 0, tintOpacity: 0.15)
+                    .vantaGlassCard(cornerRadius: 16, shadowRadius: 0, tintOpacity: 0.12)
                 }
                 .buttonStyle(.plain)
                 .disabled(recording.transcriptionText == nil)
@@ -373,7 +349,7 @@ struct RecordingDetailView: View {
                 Button {
                     showSummarySheet = true
                 } label: {
-                    HStack(spacing: 12) {
+                    HStack(spacing: 10) {
                         ZStack {
                             Circle()
                                 .fill(.ultraThinMaterial)
@@ -381,14 +357,14 @@ struct RecordingDetailView: View {
                                 .fill(Color.pinkVibrant.opacity(0.15))
                             if isGeneratingSummary || recording.isSummaryGenerating {
                                 ProgressView()
-                                    .scaleEffect(0.8)
+                                    .scaleEffect(0.7)
                             } else {
                                 Image(systemName: "doc.text")
-                                    .font(.body)
+                                    .font(.callout)
                                     .foregroundStyle(Color.pinkVibrant)
                             }
                         }
-                        .frame(width: 40, height: 40)
+                        .frame(width: 36, height: 36)
 
                         Text(isGeneratingSummary || recording.isSummaryGenerating ? "Генерируем..." : "Саммари")
                             .font(.subheadline)
@@ -397,7 +373,7 @@ struct RecordingDetailView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(12)
-                    .vantaGlassCard(cornerRadius: 16, shadowRadius: 0, tintOpacity: 0.15)
+                    .vantaGlassCard(cornerRadius: 16, shadowRadius: 0, tintOpacity: 0.12)
                 }
                 .buttonStyle(.plain)
                 .disabled(recording.summaryText == nil && !isGeneratingSummary && !recording.isSummaryGenerating)
@@ -409,7 +385,7 @@ struct RecordingDetailView: View {
                 Button {
                     regenerateSummary()
                 } label: {
-                    HStack {
+                    HStack(spacing: 6) {
                         Image(systemName: "arrow.clockwise")
                         Text("Повторить генерацию саммари")
                     }
@@ -513,69 +489,130 @@ struct RecordingDetailView: View {
     private var meetingLinkSection: some View {
         VStack(spacing: 12) {
             if recording.hasLinkedMeeting {
-                // Linked meeting card with pencil edit button
-                HStack(spacing: 0) {
-                    // Main area - tap to view meeting details
+                // Linked meeting card - со стеклянным синим стилем
+                VStack(alignment: .leading, spacing: 12) {
+                    // Карточка события - открывает action sheet
                     Button {
-                        showMeetingDetail = true
+                        showMeetingActions = true
                     } label: {
                         HStack(spacing: 12) {
+                            // Иконка календаря
                             ZStack {
-                                Circle()
-                                    .fill(.ultraThinMaterial)
-                                Circle()
+                                RoundedRectangle(cornerRadius: 10)
                                     .fill(Color.blue.opacity(0.15))
+                                    .frame(width: 44, height: 44)
+                                
                                 Image(systemName: "calendar")
-                                    .font(.body)
-                                    .foregroundStyle(.blue)
+                                    .font(.title3)
+                                    .foregroundStyle(Color.blueVibrant)
                             }
-                            .frame(width: 40, height: 40)
-
-                            VStack(alignment: .leading, spacing: 2) {
+                            
+                            // Информация о встрече
+                            VStack(alignment: .leading, spacing: 4) {
                                 Text(linkedEvent?.subject ?? recording.linkedMeetingSubject ?? "Встреча")
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
+                                    .font(.headline)
                                     .foregroundStyle(.primary)
-                                    .lineLimit(1)
-
+                                    .lineLimit(2)
+                                
                                 if let event = linkedEvent {
-                                    HStack(spacing: 8) {
-                                        Text(formatMeetingTime(event.startTime))
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                        if !event.humanAttendees.isEmpty {
-                                            Text("•")
-                                                .foregroundStyle(.tertiary)
-                                            Text("\(event.humanAttendees.count) участн.")
+                                    HStack(spacing: 12) {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "clock")
                                                 .font(.caption)
                                                 .foregroundStyle(.secondary)
+                                            Text("\(formatMeetingTime(event.startTime)) - \(formatMeetingTime(event.endTime))")
+                                                .font(.subheadline)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        
+                                        if !event.humanAttendees.isEmpty {
+                                            HStack(spacing: 4) {
+                                                Image(systemName: "person.2")
+                                                    .font(.caption)
+                                                    .foregroundStyle(.secondary)
+                                                Text("\(event.humanAttendees.count)")
+                                                    .font(.subheadline)
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                        }
+                                    }
+                                    
+                                    if let location = event.location, !location.isEmpty {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "mappin")
+                                                .font(.caption)
+                                                .foregroundStyle(.tertiary)
+                                            Text(location)
+                                                .font(.caption)
+                                                .foregroundStyle(.tertiary)
+                                                .lineLimit(1)
                                         }
                                     }
                                 }
                             }
+                            
                             Spacer()
+                            
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
                         }
                         .padding(12)
                     }
                     .buttonStyle(.plain)
+                    .vantaBlueGlassCard(cornerRadius: 16, shadowRadius: 0, tintOpacity: 0.12)
+                    
+                    // Send Summary Button - в стиле других кнопок
+                    if recording.canSendSummary {
+                        Button {
+                            sendSummary()
+                        } label: {
+                            HStack(spacing: 12) {
+                                ZStack {
+                                    Circle()
+                                        .fill(.ultraThinMaterial)
+                                    Circle()
+                                        .fill(Color.green.opacity(0.15))
+                                    if summaryEmailManager.isSending {
+                                        ProgressView()
+                                            .scaleEffect(0.7)
+                                    } else {
+                                        Image(systemName: recording.hasSentSummary ? "envelope.badge.fill" : "envelope")
+                                            .font(.callout)
+                                            .foregroundStyle(.green)
+                                    }
+                                }
+                                .frame(width: 36, height: 36)
 
-                    // Pencil button - tap to change linked meeting
-                    Button {
-                        showEventPicker = true
-                    } label: {
-                        Image(systemName: "pencil")
-                            .font(.body)
-                            .foregroundStyle(.secondary)
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(recording.hasSentSummary ? "Отправить повторно" : "Отправить саммари")
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                        .foregroundStyle(.primary)
+                                    
+                                    if recording.hasSentSummary, let sentAt = recording.summarySentAt {
+                                        Text("Отправлено \(formattedSentDate(sentAt))")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    } else {
+                                        Text("\(recording.linkedMeetingAttendeeEmails.count) участников")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+
+                                Spacer()
+
+                                Image(systemName: "paperplane")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .padding(12)
+                            .vantaGlassCard(cornerRadius: 16, shadowRadius: 0, tintOpacity: 0.10)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(summaryEmailManager.isSending)
                     }
-                    .buttonStyle(.plain)
-                }
-                .vantaGlassCard(cornerRadius: 16, shadowRadius: 0, tintOpacity: 0.10)
-
-                // Send Summary Button (if recording can send summary)
-                if recording.canSendSummary {
-                    sendSummaryButton
                 }
 
             } else if !eventsForLinking.isEmpty {
@@ -617,11 +654,33 @@ struct RecordingDetailView: View {
                 recording: recording,
                 events: eventsForLinking
             )
+            .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showMeetingDetail) {
             if let event = linkedEvent {
                 EventDetailSheet(event: event)
+                    .presentationDragIndicator(.visible)
             }
+        }
+        .sheet(isPresented: $showMeetingActions) {
+            MeetingActionsSheet(
+                eventName: linkedEvent?.subject ?? recording.linkedMeetingSubject ?? "Встреча",
+                onShowDetails: {
+                    showMeetingActions = false
+                    showMeetingDetail = true
+                },
+                onSelectOther: {
+                    showMeetingActions = false
+                    showEventPicker = true
+                },
+                onUnlink: {
+                    recording.unlinkFromMeeting()
+                    try? modelContext.save()
+                    showMeetingActions = false
+                }
+            )
+            .presentationDetents([.fraction(0.35)])
+            .presentationDragIndicator(.visible)
         }
         .alert("Саммари отправлено", isPresented: $showSendSummarySuccess) {
             Button("OK", role: .cancel) {}
@@ -634,59 +693,6 @@ struct RecordingDetailView: View {
         } message: {
             Text(summaryEmailManager.lastError?.localizedDescription ?? "Не удалось отправить саммари")
         }
-    }
-
-    // MARK: - Send Summary Button
-
-    private var sendSummaryButton: some View {
-        Button {
-            sendSummary()
-        } label: {
-            HStack(spacing: 12) {
-                ZStack {
-                    Circle()
-                        .fill(.ultraThinMaterial)
-                    Circle()
-                        .fill(Color.green.opacity(0.15))
-                    if summaryEmailManager.isSending {
-                        ProgressView()
-                            .scaleEffect(0.8)
-                    } else {
-                        Image(systemName: recording.hasSentSummary ? "envelope.badge.fill" : "envelope")
-                            .font(.body)
-                            .foregroundStyle(.green)
-                    }
-                }
-                .frame(width: 40, height: 40)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(recording.hasSentSummary ? "Отправить повторно" : "Отправить саммари")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundStyle(.primary)
-
-                    if recording.hasSentSummary, let sentAt = recording.summarySentAt {
-                        Text("Отправлено \(formattedSentDate(sentAt))")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text("\(recording.linkedMeetingAttendeeEmails.count) участников")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                Spacer()
-
-                Image(systemName: "paperplane")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(12)
-            .vantaGlassCard(cornerRadius: 16, shadowRadius: 0, tintOpacity: 0.10)
-        }
-        .buttonStyle(.plain)
-        .disabled(summaryEmailManager.isSending)
     }
 
     private func sendSummary() {
@@ -722,13 +728,25 @@ struct RecordingDetailView: View {
             Button {
                 copyTranscription()
             } label: {
-                Label("Копировать расшифровку", systemImage: "doc.on.doc")
+                Label {
+                    Text("Копировать расшифровку")
+                        .foregroundStyle(.primary)
+                } icon: {
+                    Image(systemName: "doc.on.doc")
+                        .foregroundStyle(.primary)
+                }
             }
 
             Button {
                 copySummary()
             } label: {
-                Label("Копировать саммари", systemImage: "doc.on.doc")
+                Label {
+                    Text("Копировать саммари")
+                        .foregroundStyle(.primary)
+                } icon: {
+                    Image(systemName: "doc.on.doc")
+                        .foregroundStyle(.primary)
+                }
             }
 
             Divider()
@@ -737,13 +755,25 @@ struct RecordingDetailView: View {
         Button {
             shareAudio()
         } label: {
-            Label("Поделиться аудио", systemImage: "square.and.arrow.up")
+            Label {
+                Text("Поделиться аудио")
+                    .foregroundStyle(.primary)
+            } icon: {
+                Image(systemName: "square.and.arrow.up")
+                    .foregroundStyle(.primary)
+            }
         }
 
         Button {
             exportToFiles()
         } label: {
-            Label("Сохранить в Файлы", systemImage: "folder")
+            Label {
+                Text("Сохранить в Файлы")
+                    .foregroundStyle(.primary)
+            } icon: {
+                Image(systemName: "folder")
+                    .foregroundStyle(.primary)
+            }
         }
     }
 
@@ -1033,6 +1063,71 @@ struct RecordingDetailView: View {
     }
 }
 
+// MARK: - Meeting Actions Sheet (в стиле ImportPresetPickerSheet)
+
+private struct MeetingActionsSheet: View {
+    let eventName: String
+    let onShowDetails: () -> Void
+    let onSelectOther: () -> Void
+    let onUnlink: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationStack {
+            List {
+                // Кнопка деталей встречи
+                Button {
+                    dismiss()
+                    onShowDetails()
+                } label: {
+                    Label {
+                        Text("Детали встречи")
+                            .foregroundStyle(.primary)
+                    } icon: {
+                        Image(systemName: "info.circle")
+                            .foregroundStyle(.primary)
+                    }
+                }
+                .tint(.primary)
+                
+                // Кнопка выбора другой встречи
+                Button {
+                    dismiss()
+                    onSelectOther()
+                } label: {
+                    Label {
+                        Text("Выбрать другую встречу")
+                            .foregroundStyle(.primary)
+                    } icon: {
+                        Image(systemName: "arrow.left.arrow.right")
+                            .foregroundStyle(.primary)
+                    }
+                }
+                .tint(.primary)
+                
+                // Кнопка отвязки - с красным стилем и иконкой крестика
+                Button {
+                    dismiss()
+                    onUnlink()
+                } label: {
+                    Label {
+                        Text("Отвязать от встречи")
+                            .foregroundStyle(.red)
+                    } icon: {
+                        Image(systemName: "xmark.circle")
+                            .foregroundStyle(.red)
+                    }
+                }
+                .tint(.red)
+            }
+            .navigationTitle(eventName)
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .tint(.primary)
+        .presentationDragIndicator(.visible)
+    }
+}
+
 // MARK: - Content Sheet View
 
 struct ContentSheetView: View {
@@ -1110,9 +1205,12 @@ struct ContentSheetView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     if isEditing {
-                        Button("Отмена") {
+                        Button {
                             editedContent = content
                             isEditing = false
+                        } label: {
+                            Text("Отмена")
+                                .foregroundStyle(.primary)
                         }
                     } else if !content.isEmpty {
                         Menu {
@@ -1121,7 +1219,13 @@ struct ContentSheetView: View {
                                 Button {
                                     showConfluenceExport = true
                                 } label: {
-                                    Label("Confluence", systemImage: "doc.text")
+                                    Label {
+                                        Text("Confluence")
+                                            .foregroundStyle(.primary)
+                                    } icon: {
+                                        Image(systemName: "doc.text")
+                                            .foregroundStyle(.primary)
+                                    }
                                 }
                             }
 
@@ -1129,7 +1233,13 @@ struct ContentSheetView: View {
                                 Button {
                                     exportToNotion()
                                 } label: {
-                                    Label("Notion", systemImage: "doc.richtext")
+                                    Label {
+                                        Text("Notion")
+                                            .foregroundStyle(.primary)
+                                    } icon: {
+                                        Image(systemName: "doc.richtext")
+                                            .foregroundStyle(.primary)
+                                    }
                                 }
                             }
 
@@ -1137,7 +1247,13 @@ struct ContentSheetView: View {
                                 Button {
                                     exportToGoogleDocs()
                                 } label: {
-                                    Label("Google Docs", systemImage: "doc.text.fill")
+                                    Label {
+                                        Text("Google Docs")
+                                            .foregroundStyle(.primary)
+                                    } icon: {
+                                        Image(systemName: "doc.text.fill")
+                                            .foregroundStyle(.primary)
+                                    }
                                 }
                             }
 
@@ -1149,19 +1265,33 @@ struct ContentSheetView: View {
                             Button {
                                 copyToClipboard()
                             } label: {
-                                Label("Копировать", systemImage: "doc.on.doc")
+                                Label {
+                                    Text("Копировать")
+                                        .foregroundStyle(.primary)
+                                } icon: {
+                                    Image(systemName: "doc.on.doc")
+                                        .foregroundStyle(.primary)
+                                }
                             }
 
                             // Share option
                             Button {
                                 shareContent()
                             } label: {
-                                Label("Поделиться", systemImage: "square.and.arrow.up")
+                                Label {
+                                    Text("Поделиться")
+                                        .foregroundStyle(.primary)
+                                } icon: {
+                                    Image(systemName: "square.and.arrow.up")
+                                        .foregroundStyle(.primary)
+                                }
                             }
                         } label: {
                             HStack(spacing: 4) {
                                 Text("Экспорт")
+                                    .foregroundStyle(.primary)
                                 Image(systemName: "square.and.arrow.up")
+                                    .foregroundStyle(.primary)
                             }
                         }
                     }
@@ -1169,12 +1299,15 @@ struct ContentSheetView: View {
 
                 ToolbarItem(placement: .topBarTrailing) {
                     if isEditing {
-                        Button("Сохранить") {
+                        Button {
                             // Convert plain text back to markdown before saving
                             onContentChange?(restoreMarkdown(editedContent))
                             isEditing = false
+                        } label: {
+                            Text("Сохранить")
+                                .foregroundStyle(.primary)
+                                .fontWeight(.semibold)
                         }
-                        .fontWeight(.semibold)
                     } else if !content.isEmpty && isEditable {
                         Menu {
                             Button {
@@ -1182,7 +1315,13 @@ struct ContentSheetView: View {
                                 editedContent = stripMarkdown(content)
                                 isEditing = true
                             } label: {
-                                Label("Редактировать", systemImage: "pencil")
+                                Label {
+                                    Text("Редактировать")
+                                        .foregroundStyle(.primary)
+                                } icon: {
+                                    Image(systemName: "pencil")
+                                        .foregroundStyle(.primary)
+                                }
                             }
 
                             if onRegenerateSummary != nil {
@@ -1193,7 +1332,13 @@ struct ContentSheetView: View {
                                         isRegenerating = false
                                     }
                                 } label: {
-                                    Label("Сгенерировать заново", systemImage: "arrow.clockwise")
+                                    Label {
+                                        Text("Сгенерировать заново")
+                                            .foregroundStyle(.primary)
+                                    } icon: {
+                                        Image(systemName: "arrow.clockwise")
+                                            .foregroundStyle(.primary)
+                                    }
                                 }
                                 .disabled(isRegenerating)
                             }
@@ -1202,6 +1347,7 @@ struct ContentSheetView: View {
                                 ProgressView()
                             } else {
                                 Text("Изменить")
+                                    .foregroundStyle(.primary)
                             }
                         }
                         .disabled(isRegenerating)
@@ -1209,6 +1355,7 @@ struct ContentSheetView: View {
                 }
             }
         }
+        .tint(.primary)
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .onAppear {
@@ -1221,6 +1368,7 @@ struct ContentSheetView: View {
                         debugLog("Exported to Confluence: \(url)", module: "ContentSheetView")
                     }
                 }
+                .presentationDragIndicator(.visible)
             }
         }
     }
@@ -1313,63 +1461,106 @@ private struct EventPickerSheetForRecording: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                // Кнопка "Отвязать" если есть связь
-                if recording.hasLinkedMeeting {
-                    Section {
+            ScrollView {
+                LazyVStack(spacing: 12) {
+                    // Кнопка "Отвязать" если есть связь
+                    if recording.hasLinkedMeeting {
                         Button(role: .destructive) {
                             recording.unlinkFromMeeting()
                             dismiss()
                         } label: {
-                            Label("Отвязать от встречи", systemImage: "link.badge.minus")
+                            Label {
+                                Text("Отвязать от встречи")
+                                    .foregroundStyle(.red)
+                            } icon: {
+                                Image(systemName: "link.badge.minus")
+                                    .foregroundStyle(.red)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(12)
+                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
                         }
+                        .buttonStyle(.plain)
                     }
-                }
 
-                // Список событий
-                Section {
+                    // Список событий
                     ForEach(events) { event in
                         Button {
                             recording.linkToMeeting(event)
                             dismiss()
                         } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(event.subject)
-                                    .font(.headline)
-                                    .foregroundStyle(.primary)
-
-                                HStack(spacing: 12) {
-                                    Label(formattedTime(event), systemImage: "clock")
-
-                                    if !event.attendees.isEmpty {
-                                        Label("\(event.humanAttendees.count) участн.", systemImage: "person.2")
-                                    }
-                                }
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            }
-                            .padding(.vertical, 4)
+                            EventPickerRow(event: event)
                         }
                         .buttonStyle(.plain)
                     }
                 }
+                .padding()
             }
             .navigationTitle("Выберите событие")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Отмена") {
-                        dismiss()
-                    }
-                }
-            }
         }
+        .tint(.primary)
+        .presentationDragIndicator(.visible)
     }
 
     private func formattedTime(_ event: EASCalendarEvent) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm"
         return formatter.string(from: event.startTime)
+    }
+}
+
+// MARK: - Event Picker Row (синий стиль)
+
+private struct EventPickerRow: View {
+    let event: EASCalendarEvent
+    
+    private func formattedTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter.string(from: date)
+    }
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            // Иконка календаря
+            ZStack {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.blue.opacity(0.15))
+                    .frame(width: 44, height: 44)
+                
+                Image(systemName: "calendar")
+                    .font(.title3)
+                    .foregroundStyle(Color.blueVibrant)
+            }
+            
+            // Информация о встрече
+            VStack(alignment: .leading, spacing: 4) {
+                Text(event.subject)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                
+                HStack(spacing: 12) {
+                    Label(formattedTime(event.startTime), systemImage: "clock")
+                        .font(.caption)
+                    
+                    if !event.humanAttendees.isEmpty {
+                        Label("\(event.humanAttendees.count)", systemImage: "person.2")
+                            .font(.caption)
+                    }
+                }
+                .foregroundStyle(.secondary)
+            }
+            
+            Spacer()
+            
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+        .padding(12)
+        .vantaBlueGlassCard(cornerRadius: 16, shadowRadius: 0, tintOpacity: 0.12)
     }
 }
 

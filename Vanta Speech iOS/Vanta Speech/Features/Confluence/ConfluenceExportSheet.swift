@@ -40,13 +40,6 @@ struct ConfluenceExportSheet: View {
             }
             .navigationTitle("Экспорт в Confluence")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Отмена") {
-                        dismiss()
-                    }
-                }
-            }
             .onAppear {
                 setupInitialValues()
             }
@@ -56,6 +49,7 @@ struct ConfluenceExportSheet: View {
                     selectedParentPageId = pageId
                     selectedParentPageTitle = pageTitle
                 }
+                .presentationDragIndicator(.visible)
             }
             .alert("Ошибка", isPresented: $showError) {
                 Button("OK", role: .cancel) {}

@@ -1,52 +1,57 @@
 import SwiftUI
 
-/// Sheet для выбора типа записи с предложением привязки к ближайшей встрече
+/// Sheet для выбора типа записи с предложением привязки к ближайшим встречам
 struct RecordingOptionsSheet: View {
-    let upcomingMeeting: EASCalendarEvent?
+    let upcomingMeetings: [EASCalendarEvent]  // Теперь массив встреч (до 2)
     let presets: [RecordingPreset]
     let isRealtimeMode: Bool
-    let onSelectPreset: (RecordingPreset, Bool) -> Void  // (preset, linkToMeeting)
+    let onSelectPreset: (RecordingPreset, EASCalendarEvent?) -> Void  // (preset, selectedMeeting)
     let onCancel: () -> Void
 
-    @State private var linkToMeeting = true
+    @State private var selectedMeetingId: String?
+    
+    /// Две ближайшие встречи по времени начала
+    private var suggestedMeetings: [EASCalendarEvent] {
+        Array(upcomingMeetings.prefix(2))
+    }
+    
+    /// Выбранная встреча (если есть)
+    private var selectedMeeting: EASCalendarEvent? {
+        suggestedMeetings.first { $0.id == selectedMeetingId }
+    }
 
     var body: some View {
         NavigationStack {
             List {
-                // Секция встречи (если есть ближайшая)
-                if let meeting = upcomingMeeting {
+                // MARK: - Секция предлагаемых встреч (только если есть встречи)
+                if !suggestedMeetings.isEmpty {
                     Section {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(meeting.subject)
-                                .font(.headline)
-
-                            HStack(spacing: 12) {
-                                Label(formattedTime(meeting), systemImage: "clock")
-                                if !meeting.humanAttendees.isEmpty {
-                                    Label("\(meeting.humanAttendees.count) участн.", systemImage: "person.2")
+                        ForEach(suggestedMeetings) { meeting in
+                            MeetingSelectionRow(
+                                meeting: meeting,
+                                isSelected: selectedMeetingId == meeting.id
+                            ) {
+                                if selectedMeetingId == meeting.id {
+                                    selectedMeetingId = nil
+                                } else {
+                                    selectedMeetingId = meeting.id
                                 }
                             }
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-
-                            Toggle("Привязать к встрече", isOn: $linkToMeeting)
-                                .tint(Color.pinkVibrant)
                         }
-                        .padding(.vertical, 4)
                     } header: {
-                        Text(isMeetingOngoing(meeting) ? "Текущая встреча" : "Ближайшая встреча")
+                        Text(suggestedMeetings.count == 1 ? "Ближайшая встреча" : "Ближайшие встречи")
                     } footer: {
-                        if linkToMeeting {
-                            Text("Запись будет автоматически привязана к этой встрече")
+                        if selectedMeeting != nil {
+                            Text("Запись будет автоматически привязана к выбранной встрече")
                         }
                     }
                 }
 
-                // Секция выбора пресета
+                // MARK: - Секция выбора пресета
                 Section {
                     ForEach(presets, id: \.rawValue) { preset in
                         Button {
-                            onSelectPreset(preset, linkToMeeting && upcomingMeeting != nil)
+                            onSelectPreset(preset, selectedMeeting)
                         } label: {
                             Label {
                                 VStack(alignment: .leading, spacing: 2) {
@@ -60,36 +65,106 @@ struct RecordingOptionsSheet: View {
                                 }
                             } icon: {
                                 Image(systemName: preset.icon)
-                                    .foregroundStyle(Color.pinkVibrant)
+                                    .foregroundStyle(.primary)
                             }
                         }
                     }
                 } header: {
                     Text("Тип записи")
+                } footer: {
+                    Text("Тип записи влияет на формат транскрипции и саммари")
                 }
             }
             .navigationTitle("Начать запись")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Отмена") {
-                        onCancel()
+        }
+        .tint(.primary)
+        .presentationDragIndicator(.visible)
+        .onAppear {
+            // По умолчанию выбираем первую встречу если есть
+            if selectedMeetingId == nil, let first = suggestedMeetings.first {
+                selectedMeetingId = first.id
+            }
+        }
+    }
+}
+
+// MARK: - Meeting Selection Row (с круглым чекбоксом)
+
+private struct MeetingSelectionRow: View {
+    let meeting: EASCalendarEvent
+    let isSelected: Bool
+    let onTap: () -> Void
+    
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 12) {
+                // Иконка календаря
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.blue.opacity(0.15))
+                        .frame(width: 44, height: 44)
+                    
+                    Image(systemName: "calendar")
+                        .font(.title3)
+                        .foregroundStyle(Color.blueVibrant)
+                }
+                
+                // Информация о встрече
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(meeting.subject)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    
+                    HStack(spacing: 12) {
+                        Label(formattedTime(meeting.startTime), systemImage: "clock")
+                            .font(.caption)
+                        if !meeting.humanAttendees.isEmpty {
+                            Label("\(meeting.humanAttendees.count)", systemImage: "person.2")
+                                .font(.caption)
+                        }
+                    }
+                    .foregroundStyle(.secondary)
+                }
+                
+                Spacer()
+                
+                // Круглый чекбокс
+                ZStack {
+                    Circle()
+                        .stroke(isSelected ? Color.primary : Color.secondary.opacity(0.3), lineWidth: 2)
+                        .frame(width: 24, height: 24)
+                    
+                    if isSelected {
+                        Circle()
+                            .fill(Color.primary)
+                            .frame(width: 16, height: 16)
+                        
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.white)
                     }
                 }
             }
         }
+        .buttonStyle(.plain)
     }
-
-    private func formattedTime(_ event: EASCalendarEvent) -> String {
+    
+    private func formattedTime(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm"
-        let start = formatter.string(from: event.startTime)
-        let end = formatter.string(from: event.endTime)
-        return "\(start) — \(end)"
+        return formatter.string(from: date)
     }
+}
 
-    private func isMeetingOngoing(_ event: EASCalendarEvent) -> Bool {
-        let now = Date()
-        return event.startTime <= now && event.endTime > now
-    }
+#Preview {
+    RecordingOptionsSheet(
+        upcomingMeetings: [],
+        presets: [.projectMeeting, .dailyStandup, .fastIdea],
+        isRealtimeMode: false,
+        onSelectPreset: { _, _ in },
+        onCancel: {}
+    )
 }
