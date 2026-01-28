@@ -4,6 +4,7 @@ struct CalendarView: View {
     @Binding var selectedDate: Date?
     @Binding var displayedMonth: Date
     let recordingDates: Set<DateComponents>
+    var onDateTap: ((Date) -> Void)? = nil
 
     private let calendar = Calendar.current
     private let weekdaySymbols = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
@@ -70,8 +71,9 @@ struct CalendarView: View {
                     hasRecordings: hasRecordings(for: day),
                     isSelected: isSelected(day),
                     onTap: {
-                        if day != nil {
+                        if let day = day {
                             selectedDate = day
+                            onDateTap?(day)
                         }
                     }
                 )

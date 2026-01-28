@@ -4,6 +4,8 @@ import SwiftUI
 /// iPad объединённый главный экран: Календарь слева, Запись справа
 struct iPadMainView: View {
     @Binding var selectedRecording: Recording?
+    @Binding var selectedDayForDetail: Date?
+    @Binding var showDayDetailSheet: Bool
     var onOpenInNewWindow: ((Recording) -> Void)?
 
     @Environment(\.modelContext) private var modelContext
@@ -40,19 +42,40 @@ struct iPadMainView: View {
     }
 
     private var displayedRecordings: [Recording] {
+        let recordings: [Recording]
         if let date = selectedDate {
             let startOfDay = calendar.startOfDay(for: date)
             let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay) ?? startOfDay
-            return allRecordings.filter { $0.createdAt >= startOfDay && $0.createdAt < endOfDay }
+            recordings = allRecordings.filter { $0.createdAt >= startOfDay && $0.createdAt < endOfDay }
         } else {
-            return Array(allRecordings.prefix(20))
+            recordings = Array(allRecordings.prefix(20))
+        }
+        
+        // Deduplicate by ID
+        var seenIds = Set<UUID>()
+        return recordings.filter { recording in
+            if seenIds.contains(recording.id) {
+                return false
+            }
+            seenIds.insert(recording.id)
+            return true
         }
     }
 
     private var todayRecordings: [Recording] {
         let startOfDay = calendar.startOfDay(for: Date())
         let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay) ?? startOfDay
-        return allRecordings.filter { $0.createdAt >= startOfDay && $0.createdAt < endOfDay }
+        let recordings = allRecordings.filter { $0.createdAt >= startOfDay && $0.createdAt < endOfDay }
+        
+        // Deduplicate by ID
+        var seenIds = Set<UUID>()
+        return recordings.filter { recording in
+            if seenIds.contains(recording.id) {
+                return false
+            }
+            seenIds.insert(recording.id)
+            return true
+        }
     }
 
     private var listTitle: String {
@@ -245,7 +268,12 @@ struct iPadMainView: View {
                 CalendarView(
                     selectedDate: $selectedDate,
                     displayedMonth: $displayedMonth,
-                    recordingDates: recordingDates
+                    recordingDates: recordingDates,
+                    onDateTap: { date in
+                        // Открываем детали дня для любой выбранной даты
+                        selectedDayForDetail = date
+                        showDayDetailSheet = true
+                    }
                 )
                 .padding(.horizontal)
                 .padding(.top, 8)
@@ -324,36 +352,24 @@ struct iPadMainView: View {
             } else {
                 LazyVStack(spacing: 12) {
                     ForEach(displayedRecordings) { recording in
-                        RecordingCard(recording: recording) {
-                            selectedRecording = recording
-                        }
+                        RecordingCard(
+                            recording: recording,
+                            onTap: {
+                                selectedRecording = recording
+                            },
+                            onDelete: {
+                                deleteRecording(recording)
+                            },
+                            onGenerateSummary: recording.isTranscribed && recording.summaryText == nil ? {
+                                Task {
+                                    await coordinator.generateSummary(for: recording)
+                                }
+                            } : nil
+                        )
                         .background(
                             RoundedRectangle(cornerRadius: 24)
                                 .fill(selectedRecording?.id == recording.id ? Color.pinkVibrant.opacity(0.1) : Color.clear)
                         )
-                        .contextMenu {
-                            Button {
-                                selectedRecording = recording
-                            } label: {
-                                Label("Открыть", systemImage: "arrow.right.circle")
-                            }
-
-                            if onOpenInNewWindow != nil {
-                                Button {
-                                    onOpenInNewWindow?(recording)
-                                } label: {
-                                    Label("Открыть в новом окне", systemImage: "macwindow.badge.plus")
-                                }
-                            }
-
-                            Divider()
-
-                            Button(role: .destructive) {
-                                deleteRecording(recording)
-                            } label: {
-                                Label("Удалить", systemImage: "trash")
-                            }
-                        }
                     }
                 }
                 .padding(.horizontal)
@@ -435,7 +451,12 @@ struct iPadMainView: View {
                             },
                             onDelete: {
                                 deleteRecording(recording)
-                            }
+                            },
+                            onGenerateSummary: recording.isTranscribed && recording.summaryText == nil ? {
+                                Task {
+                                    await coordinator.generateSummary(for: recording)
+                                }
+                            } : nil
                         )
                     }
                 }
@@ -601,7 +622,11 @@ private struct StatCard: View {
 }
 
 #Preview {
-    iPadMainView(selectedRecording: .constant(nil))
+    iPadMainView(
+        selectedRecording: .constant(nil),
+        selectedDayForDetail: .constant(nil),
+        showDayDetailSheet: .constant(false)
+    )
         .environmentObject(AudioRecorder())
         .environmentObject(RecordingCoordinator.shared)
         .modelContainer(for: Recording.self, inMemory: true)

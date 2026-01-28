@@ -5,6 +5,7 @@ struct RecordingCard: View {
     let recording: Recording
     var onTap: () -> Void = {}
     var onDelete: (() -> Void)?
+    var onGenerateSummary: (() -> Void)?
 
     var body: some View {
         Button(action: onTap) {
@@ -71,11 +72,29 @@ struct RecordingCard: View {
                             isActive: true,
                             isAnimating: true
                         )
+                    } else if recording.summaryText != nil {
+                        statusBadge(
+                            icon: "doc.text",
+                            text: "Саммари",
+                            isActive: true
+                        )
+                    } else if recording.isTranscribed && onGenerateSummary != nil {
+                        // Кликабельный бейдж для генерации саммари
+                        Button(action: onGenerateSummary!) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "doc.text")
+                                    .font(.caption2)
+                                Text("Сгенерировать")
+                                    .font(.caption2)
+                            }
+                            .foregroundStyle(Color.blueVibrant)
+                        }
+                        .buttonStyle(.plain)
                     } else {
                         statusBadge(
                             icon: "doc.text",
-                            text: recording.summaryText != nil ? "Саммари" : "Нет саммари",
-                            isActive: recording.summaryText != nil
+                            text: "Нет саммари",
+                            isActive: false
                         )
                     }
 

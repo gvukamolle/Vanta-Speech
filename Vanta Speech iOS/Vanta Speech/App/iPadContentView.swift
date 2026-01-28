@@ -13,21 +13,28 @@ struct iPadContentView: View {
     @AppStorage("appTheme") private var appTheme = AppTheme.system.rawValue
     @State private var selectedRecording: Recording?
     @State private var showSettings = false
+    
+    // Состояние для боковой панели деталей дня
+    @State private var selectedDayForDetail: Date?
+    @State private var showDayDetailSheet = false
 
     var body: some View {
-        NavigationStack {
-            iPadMainView(
-                selectedRecording: $selectedRecording,
-                onOpenInNewWindow: openRecordingInNewWindow
-            )
-            .navigationTitle("Vanta Speech")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    settingsButton
+        ZStack {
+            NavigationStack {
+                iPadMainView(
+                    selectedRecording: $selectedRecording,
+                    selectedDayForDetail: $selectedDayForDetail,
+                    showDayDetailSheet: $showDayDetailSheet,
+                    onOpenInNewWindow: openRecordingInNewWindow
+                )
+                .navigationTitle("Vanta Speech")
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        settingsButton
+                    }
                 }
             }
-        }
-        .sheet(item: $selectedRecording) { recording in
+            .sheet(item: $selectedRecording) { recording in
             NavigationStack {
                 RecordingDetailView(recording: recording)
                     .toolbar {
@@ -64,6 +71,56 @@ struct iPadContentView: View {
         }
         .tint(.pinkVibrant)
         .preferredColorScheme(colorScheme)
+        }
+        // Боковая панель деталей дня (выезжает справа) - на уровне ZStack чтобы быть поверх всего
+        .overlay(
+            GeometryReader { geometry in
+                ZStack {
+                    // Затемнение фона при открытой панели
+                    if showDayDetailSheet {
+                        Color.black.opacity(0.3)
+                            .ignoresSafeArea()
+                            .onTapGesture {
+                                withAnimation(.easeInOut(duration: 0.25)) {
+                                    showDayDetailSheet = false
+                                }
+                            }
+                            .transition(.opacity)
+                    }
+                    
+                    // Боковая панель (во всю высоту, без скруглений)
+                    if showDayDetailSheet, let date = selectedDayForDetail {
+                        HStack(spacing: 0) {
+                            Spacer()
+                            
+                            DayDetailSheet(
+                                date: date,
+                                onDismiss: {
+                                    withAnimation(.easeInOut(duration: 0.25)) {
+                                        showDayDetailSheet = false
+                                    }
+                                },
+                                onOpenRecording: { recording in
+                                    withAnimation(.easeInOut(duration: 0.25)) {
+                                        showDayDetailSheet = false
+                                    }
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                        selectedRecording = recording
+                                    }
+                                }
+                            )
+                            .environmentObject(coordinator)
+                            .frame(width: min(420, geometry.size.width * 0.45))
+                            .background(Color(.systemGroupedBackground))
+                            .shadow(color: .black.opacity(0.3), radius: 15, x: -5, y: 0)
+                        }
+                        .transition(.move(edge: .trailing))
+                    }
+                }
+                .animation(.easeInOut(duration: 0.25), value: showDayDetailSheet)
+            }
+            .ignoresSafeArea()
+        )
     }
 
     // MARK: - Settings Button

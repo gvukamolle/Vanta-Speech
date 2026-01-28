@@ -252,8 +252,14 @@ extension EASXMLParser: XMLParserDelegate {
                 currentAttendee?.status = Int(text)
             case "Attendee":
                 if let attendee = currentAttendee?.build() {
-                    currentEvent?.attendees.append(attendee)
-                    debugLog("Parser: ADDED attendee: \(attendee.name) <\(attendee.email)>", module: "EAS", level: .info)
+                    // Check for duplicates before adding
+                    let email = attendee.email.lowercased()
+                    if !(currentEvent?.attendees.contains { $0.email.lowercased() == email } ?? false) {
+                        currentEvent?.attendees.append(attendee)
+                        debugLog("Parser: ADDED attendee: \(attendee.name) <\(attendee.email)>", module: "EAS", level: .info)
+                    } else {
+                        debugLog("Parser: SKIPPED duplicate attendee: \(attendee.name) <\(attendee.email)>", module: "EAS", level: .warning)
+                    }
                 } else {
                     debugLog("Parser: FAILED to build attendee: email=\(currentAttendee?.email ?? "nil"), name=\(currentAttendee?.name ?? "nil")", module: "EAS", level: .warning)
                 }

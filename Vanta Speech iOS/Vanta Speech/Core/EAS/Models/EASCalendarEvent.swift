@@ -79,9 +79,76 @@ struct EASCalendarEvent: Codable, Equatable, Identifiable {
         }
     }
 
-    /// Attendees excluding resources (rooms, equipment)
+    /// Unique attendees (deduplicated by email)
+    var uniqueAttendees: [EASAttendee] {
+        var seenEmails = Set<String>()
+        return attendees.filter { attendee in
+            let email = attendee.email.lowercased()
+            if seenEmails.contains(email) {
+                return false
+            }
+            seenEmails.insert(email)
+            return true
+        }
+    }
+    
+    /// Attendees excluding resources (rooms, equipment), deduplicated
     var humanAttendees: [EASAttendee] {
-        attendees.filter { $0.type != .resource }
+        var seenEmails = Set<String>()
+        return attendees.filter { attendee in
+            guard attendee.type != .resource else { return false }
+            let email = attendee.email.lowercased()
+            if seenEmails.contains(email) {
+                return false
+            }
+            seenEmails.insert(email)
+            return true
+        }
+    }
+    
+    /// Body content as plain text (strips HTML tags)
+    var plainBody: String? {
+        guard let body = body, !body.isEmpty else { return nil }
+        
+        // Simple HTML tag stripping
+        var result = body
+        
+        // Replace common HTML entities
+        let entities = [
+            "&nbsp;": " ",
+            "&amp;": "&",
+            "&lt;": "<",
+            "&gt;": ">",
+            "&quot;": "\"",
+            "&#39;": "'",
+            "&mdash;": "—",
+            "&ndash;": "–",
+            "&hellip;": "…",
+            "&bull;": "•"
+        ]
+        
+        for (entity, replacement) in entities {
+            result = result.replacingOccurrences(of: entity, with: replacement)
+        }
+        
+        // Remove HTML tags using regex
+        let pattern = "<[^>]+>"
+        if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
+            let range = NSRange(location: 0, length: result.utf16.count)
+            result = regex.stringByReplacingMatches(in: result, options: [], range: range, withTemplate: "")
+        }
+        
+        // Normalize whitespace
+        result = result.trimmingCharacters(in: .whitespacesAndNewlines)
+        result = result.replacingOccurrences(of: "\r\n", with: "\n")
+        result = result.replacingOccurrences(of: "\r", with: "\n")
+        
+        // Collapse multiple newlines
+        while result.contains("\n\n") {
+            result = result.replacingOccurrences(of: "\n\n", with: "\n")
+        }
+        
+        return result.isEmpty ? nil : result
     }
 
     /// Email list for all human attendees (including organizer if present)

@@ -321,9 +321,17 @@ private struct UnlinkedRecordingCard: View {
 
     var body: some View {
         // Recording card - tap to open detail with link button inside
-        RecordingCard(recording: recording) {
-            showRecordingDetail = true
-        }
+        RecordingCard(
+            recording: recording,
+            onTap: {
+                showRecordingDetail = true
+            },
+            onGenerateSummary: recording.isTranscribed && recording.summaryText == nil ? {
+                Task {
+                    await RecordingCoordinator.shared.generateSummary(for: recording)
+                }
+            } : nil
+        )
         .sheet(isPresented: $showRecordingDetail) {
             NavigationStack {
                 RecordingDetailView(
@@ -345,9 +353,17 @@ private struct LinkedRecordingCard: View {
     @State private var showRecordingDetail = false
 
     var body: some View {
-        RecordingCard(recording: recording) {
-            showRecordingDetail = true
-        }
+        RecordingCard(
+            recording: recording,
+            onTap: {
+                showRecordingDetail = true
+            },
+            onGenerateSummary: recording.isTranscribed && recording.summaryText == nil ? {
+                Task {
+                    await RecordingCoordinator.shared.generateSummary(for: recording)
+                }
+            } : nil
+        )
         .sheet(isPresented: $showRecordingDetail) {
             NavigationStack {
                 RecordingDetailView(
@@ -408,7 +424,7 @@ private struct EventCard: View {
         }
         .buttonStyle(.plain)
         .sheet(isPresented: $showDetail) {
-            MeetingDetailSheet(event: event)
+            EventDetailSheet(event: event)
         }
     }
 }

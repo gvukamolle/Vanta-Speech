@@ -699,6 +699,51 @@ final class RecordingCoordinator: ObservableObject {
         await liveActivityManager.endActivityImmediately()
     }
 
+    /// Сгенерировать саммари для существующей записи с транскрипцией
+    /// - Parameters:
+    ///   - recording: Запись с транскрипцией
+    ///   - preset: Пресет для генерации саммари (берется из записи или default)
+    func generateSummary(for recording: Recording, preset: RecordingPreset? = nil) async {
+        guard let transcription = recording.transcriptionText, !transcription.isEmpty else {
+            debugLog("Cannot generate summary: no transcription", module: "RecordingCoordinator", level: .warning)
+            return
+        }
+        
+        guard recording.summaryText == nil else {
+            debugLog("Summary already exists", module: "RecordingCoordinator", level: .info)
+            return
+        }
+        
+        let recordingPreset = preset ?? recording.preset ?? .projectMeeting
+        
+        // Обновляем статус генерации
+        await MainActor.run {
+            recording.isSummaryGenerating = true
+            try? modelContext?.save()
+        }
+        
+        do {
+            let service = TranscriptionService()
+            let (summary, title) = try await service.summarize(text: transcription, preset: recordingPreset)
+            
+            await MainActor.run {
+                recording.summaryText = summary
+                recording.isSummaryGenerating = false
+                if let generatedTitle = title {
+                    recording.title = generatedTitle
+                }
+                try? modelContext?.save()
+                debugLog("Summary generated successfully for recording: \(recording.title)", module: "RecordingCoordinator", level: .info)
+            }
+        } catch {
+            await MainActor.run {
+                recording.isSummaryGenerating = false
+                try? modelContext?.save()
+                debugLog("Failed to generate summary: \(error)", module: "RecordingCoordinator", level: .error)
+            }
+        }
+    }
+
     /// Восстановить pendingTranscription из Live Activity и базы данных
     /// Используется когда приложение было перезапущено, но Live Activity ещё активна
     private func tryRecoverPendingTranscription() -> PendingTranscription? {

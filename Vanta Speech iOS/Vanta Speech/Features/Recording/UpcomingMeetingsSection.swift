@@ -115,34 +115,18 @@ private struct MeetingCard: View {
         let now = Date()
         return event.startTime <= now && event.endTime > now
     }
-
-    private var formattedStartTime: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
-        return formatter.string(from: event.startTime)
+    
+    private var isPast: Bool {
+        let now = Date()
+        return event.endTime <= now
     }
 
-    private var timeUntilStart: String {
-        let now = Date()
-        if isOngoing {
-            return "Сейчас"
-        }
-
-        let interval = event.startTime.timeIntervalSince(now)
-        let minutes = Int(interval / 60)
-
-        if minutes < 1 {
-            return "\(formattedStartTime) — начинается"
-        } else if minutes < 60 {
-            return "\(formattedStartTime) (через \(minutes) мин)"
-        } else {
-            let hours = minutes / 60
-            let remainingMinutes = minutes % 60
-            if remainingMinutes == 0 {
-                return "\(formattedStartTime) (через \(hours) ч)"
-            }
-            return "\(formattedStartTime) (через \(hours) ч \(remainingMinutes) мин)"
-        }
+    private var timeDisplay: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        let start = formatter.string(from: event.startTime)
+        let end = formatter.string(from: event.endTime)
+        return "\(start) – \(end)"
     }
 
     var body: some View {
@@ -154,76 +138,82 @@ private struct MeetingCard: View {
             }
         } label: {
             HStack(spacing: 12) {
-                // Time indicator
-                VStack(spacing: 2) {
-                    if isOngoing {
-                        Circle()
-                            .fill(Color.green)
-                            .frame(width: 8, height: 8)
-                            .modifier(PulseAnimation())
-                    } else {
+                // Иконка календаря (синяя)
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.blue.opacity(0.15))
+                        .frame(width: 44, height: 44)
+                    
+                    Image(systemName: "calendar")
+                        .font(.title3)
+                        .foregroundStyle(Color.blueVibrant)
+                }
+                
+                // Информация о встрече
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(event.subject)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    
+                    // Время (начало – конец)
+                    HStack(spacing: 4) {
                         Image(systemName: "clock")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                        Text(timeDisplay)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
                     }
-                }
-                .frame(width: 24)
-
-                // Event info
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(event.subject)
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .lineLimit(1)
-                        .foregroundStyle(.primary)
-
-                    HStack(spacing: 8) {
-                        Text(timeUntilStart)
-                            .font(.caption)
-                            .foregroundStyle(isOngoing ? .green : .secondary)
-                            .fontWeight(isOngoing ? .semibold : .regular)
-
-                        if !event.attendees.isEmpty {
-                            Text("•")
-                                .foregroundStyle(.tertiary)
-                            Text("\(event.humanAttendees.count) участн.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                    
+                    // Участники и место
+                    HStack(spacing: 12) {
+                        if !event.humanAttendees.isEmpty {
+                            HStack(spacing: 4) {
+                                Image(systemName: "person.2")
+                                    .font(.caption2)
+                                Text("\(event.humanAttendees.count)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
-
+                        
                         if let location = event.location, !location.isEmpty {
-                            Text("•")
-                                .foregroundStyle(.tertiary)
-                            Text(location)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
+                            HStack(spacing: 4) {
+                                Image(systemName: "mappin")
+                                    .font(.caption2)
+                                Text(location)
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                                    .lineLimit(1)
+                            }
                         }
                     }
                 }
-
+                
                 Spacer()
-
-                // Record button for ongoing meetings
+                
+                // Индикатор текущей встречи (стабильный для iPad)
                 if isOngoing {
-                    Image(systemName: "mic.circle.fill")
-                        .font(.title2)
-                        .foregroundStyle(.blue)
+                    RecordingIndicatorDot(color: .green)
                 }
+                
+                // Стрелка
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
             }
             .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(isOngoing ? Color.green.opacity(0.1) : Color(.secondarySystemGroupedBackground))
-            )
+            .background(Color(.secondarySystemGroupedBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 16))
             .overlay(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: 16)
                     .stroke(isOngoing ? Color.green.opacity(0.3) : Color.clear, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
         .sheet(isPresented: $showDetail) {
-            MeetingDetailSheet(event: event)
+            EventDetailSheet(event: event)
         }
         .sheet(isPresented: $showRecordOptions) {
             MeetingRecordOptionsSheet(
@@ -289,6 +279,26 @@ private struct MeetingCard: View {
                 debugCaptureError(error, context: "Starting recording for meeting")
             }
         }
+    }
+}
+
+// MARK: - Recording Indicator Dot (стабильная анимация)
+
+private struct RecordingIndicatorDot: View {
+    let color: Color
+    @State private var isPulsing = false
+    
+    var body: some View {
+        Circle()
+            .fill(color)
+            .frame(width: 8, height: 8)
+            .scaleEffect(isPulsing ? 1.2 : 1.0)
+            .opacity(isPulsing ? 0.8 : 1.0)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                    isPulsing = true
+                }
+            }
     }
 }
 
@@ -406,200 +416,4 @@ final class MeetingRecordingLink: ObservableObject {
 
 extension Notification.Name {
     static let startRecordingForMeeting = Notification.Name("startRecordingForMeeting")
-}
-
-// MARK: - Meeting Detail Sheet
-
-struct MeetingDetailSheet: View {
-    let event: EASCalendarEvent
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            List {
-                // Basic info
-                Section {
-                    // Название встречи жирным без label
-                    Text(event.subject)
-                        .font(.headline)
-                        .fontWeight(.bold)
-
-                    // Дата в русском формате
-                    LabeledContent("Дата") {
-                        Text(formattedRussianDate(event.startTime))
-                    }
-
-                    // Время как промежуток
-                    LabeledContent("Время") {
-                        Text(formattedTimeRange())
-                    }
-
-                    LabeledContent("Длительность", value: event.formattedDuration)
-
-                    if let location = event.location, !location.isEmpty {
-                        LabeledContent("Место", value: location)
-                    }
-                }
-
-                // Organizer
-                if let organizer = event.organizer {
-                    Section("Организатор") {
-                        Label {
-                            VStack(alignment: .leading) {
-                                Text(organizer.name)
-                                Text(organizer.email)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        } icon: {
-                            Image(systemName: "person.circle.fill")
-                                .foregroundStyle(.blue)
-                        }
-                    }
-                }
-
-                // Attendees
-                if !event.humanAttendees.isEmpty {
-                    Section("Участники (\(event.humanAttendees.count))") {
-                        ForEach(Array(event.humanAttendees.enumerated()), id: \.offset) { _, attendee in
-                            Label {
-                                VStack(alignment: .leading) {
-                                    Text(attendee.name)
-                                    if !attendee.email.isEmpty {
-                                        Text(attendee.email)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                            } icon: {
-                                Image(systemName: attendee.type == .optional ? "person.badge.minus" : "person.fill")
-                                    .foregroundStyle(attendee.type == .optional ? .secondary : .primary)
-                            }
-                        }
-                    }
-                }
-
-                // Description
-                if let body = event.body, !body.isEmpty {
-                    Section("Описание") {
-                        Text(body.htmlStripped)
-                            .font(.body)
-                    }
-                }
-            }
-            .navigationTitle("Встреча")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Готово") {
-                        dismiss()
-                    }
-                }
-            }
-        }
-    }
-
-    // MARK: - Formatting Helpers
-
-    private func formattedRussianDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "ru_RU")
-        formatter.dateFormat = "EEE. d MMMM yyyy"
-        let result = formatter.string(from: date)
-        // Capitalize first letter
-        return result.prefix(1).uppercased() + result.dropFirst()
-    }
-
-    private func formattedTimeRange() -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
-        let start = formatter.string(from: event.startTime)
-        let end = formatter.string(from: event.endTime)
-        return "\(start) - \(end)"
-    }
-}
-
-// MARK: - String Extension for HTML
-
-private extension String {
-    /// Strip HTML tags from string (safe implementation without NSAttributedString)
-    var htmlStripped: String {
-        // Simple regex strip - safer and faster than NSAttributedString
-        var result = self
-            .replacingOccurrences(of: "<br\\s*/?>", with: "\n", options: .regularExpression)
-            .replacingOccurrences(of: "</p>", with: "\n\n", options: .caseInsensitive)
-            .replacingOccurrences(of: "</div>", with: "\n", options: .caseInsensitive)
-            .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
-
-        // Decode common HTML entities
-        let entities: [(String, String)] = [
-            ("&nbsp;", " "),
-            ("&amp;", "&"),
-            ("&lt;", "<"),
-            ("&gt;", ">"),
-            ("&quot;", "\""),
-            ("&#39;", "'"),
-            ("&ndash;", "–"),
-            ("&mdash;", "—"),
-        ]
-
-        for (entity, char) in entities {
-            result = result.replacingOccurrences(of: entity, with: char)
-        }
-
-        // Decode numeric HTML entities (decimal and hex)
-        result = result.decodingNumericHTMLEntities()
-
-        // Clean up multiple newlines
-        while result.contains("\n\n\n") {
-            result = result.replacingOccurrences(of: "\n\n\n", with: "\n\n")
-        }
-
-        return result.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    func decodingNumericHTMLEntities() -> String {
-        let pattern = "&#(x?[0-9A-Fa-f]+);"
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return self }
-
-        let nsRange = NSRange(startIndex..<endIndex, in: self)
-        let matches = regex.matches(in: self, range: nsRange)
-        guard !matches.isEmpty else { return self }
-
-        var output = ""
-        var lastIndex = startIndex
-
-        for match in matches {
-            guard let range = Range(match.range, in: self) else { continue }
-            output.append(contentsOf: self[lastIndex..<range.lowerBound])
-
-            if let codeRange = Range(match.range(at: 1), in: self) {
-                let codeString = String(self[codeRange])
-                let value: UInt32?
-                if codeString.lowercased().hasPrefix("x") {
-                    value = UInt32(codeString.dropFirst(), radix: 16)
-                } else {
-                    value = UInt32(codeString, radix: 10)
-                }
-
-                if let value, let scalar = UnicodeScalar(value) {
-                    output.append(Character(scalar))
-                } else {
-                    output.append(contentsOf: self[range])
-                }
-            } else {
-                output.append(contentsOf: self[range])
-            }
-
-            lastIndex = range.upperBound
-        }
-
-        output.append(contentsOf: self[lastIndex...])
-        return output
-    }
-}
-
-#Preview {
-    UpcomingMeetingsSection()
-        .padding()
 }

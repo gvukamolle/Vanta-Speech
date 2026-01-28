@@ -15,8 +15,18 @@ struct TodayRecordingsSection: View {
         let startOfDay = calendar.startOfDay(for: Date())
         let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay) ?? startOfDay
 
-        return allRecordings.filter { recording in
+        let recordings = allRecordings.filter { recording in
             recording.createdAt >= startOfDay && recording.createdAt < endOfDay
+        }
+        
+        // Deduplicate by ID
+        var seenIds = Set<UUID>()
+        return recordings.filter { recording in
+            if seenIds.contains(recording.id) {
+                return false
+            }
+            seenIds.insert(recording.id)
+            return true
         }
     }
 
@@ -103,7 +113,12 @@ struct TodayRecordingsSection: View {
                         },
                         onDelete: {
                             deleteRecording(recording)
-                        }
+                        },
+                        onGenerateSummary: recording.isTranscribed && recording.summaryText == nil ? {
+                            Task {
+                                await RecordingCoordinator.shared.generateSummary(for: recording)
+                            }
+                        } : nil
                     )
                     .contextMenu {
                         Button {

@@ -620,7 +620,7 @@ struct RecordingDetailView: View {
         }
         .sheet(isPresented: $showMeetingDetail) {
             if let event = linkedEvent {
-                MeetingDetailSheet(event: event)
+                EventDetailSheet(event: event)
             }
         }
         .alert("Саммари отправлено", isPresented: $showSendSummarySuccess) {
