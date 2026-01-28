@@ -145,10 +145,24 @@ struct iPadMainView: View {
                     .environmentObject(coordinator)
             }
         }
-        .sheet(isPresented: $viewModel.showRealtimeRecordingSheet) {
-            if let preset = viewModel.currentPreset {
-                RealtimeRecordingSheet(preset: preset, onStop: viewModel.stopRealtimeRecording)
-                    .environmentObject(coordinator)
+        .fullScreenCover(isPresented: $viewModel.showRealtimeRecordingSheet) {
+            NavigationStack {
+                if let preset = viewModel.currentPreset {
+                    RealtimeRecordingSheet(preset: preset, onStop: viewModel.stopRealtimeRecording)
+                        .environmentObject(coordinator)
+                        .toolbar {
+                            ToolbarItem(placement: .topBarLeading) {
+                                Button {
+                                    viewModel.showRealtimeRecordingSheet = false
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.title2)
+                                        .foregroundStyle(.secondary)
+                                }
+                                .disabled(coordinator.realtimeSpeechRecognizer.isRecording)
+                            }
+                        }
+                }
             }
         }
         .alert("Ошибка", isPresented: $viewModel.showError) {
@@ -414,9 +428,15 @@ struct iPadMainView: View {
                     }
 
                     ForEach(todayRecordings) { recording in
-                        RecordingCard(recording: recording) {
-                            selectedRecording = recording
-                        }
+                        RecordingCard(
+                            recording: recording,
+                            onTap: {
+                                selectedRecording = recording
+                            },
+                            onDelete: {
+                                deleteRecording(recording)
+                            }
+                        )
                     }
                 }
             }

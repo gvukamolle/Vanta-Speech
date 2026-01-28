@@ -96,16 +96,22 @@ struct TodayRecordingsSection: View {
                         }
                     }
 
-                    RecordingCard(recording: recording) {
-                        selectedRecording = recording
-                    }
+                    RecordingCard(
+                        recording: recording,
+                        onTap: {
+                            selectedRecording = recording
+                        },
+                        onDelete: {
+                            deleteRecording(recording)
+                        }
+                    )
                     .contextMenu {
                         Button {
                             selectedRecording = recording
                         } label: {
                             Label("Открыть", systemImage: "arrow.right.circle")
                         }
-
+                        
                         Button(role: .destructive) {
                             deleteRecording(recording)
                         } label: {

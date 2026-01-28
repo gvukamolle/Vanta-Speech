@@ -169,19 +169,24 @@ struct RealtimeRecordingSheet: View {
         HStack {
             // Recording status - используем данные от speech recognizer
             HStack(spacing: 6) {
-                if speechRecognizer.isRecording && !speechRecognizer.isInterrupted {
-                    Circle()
-                        .fill(Color.pinkVibrant)
-                        .frame(width: 8, height: 8)
-                        .modifier(PulseAnimation())
-                    Text("Запись")
-                        .foregroundStyle(Color.pinkVibrant)
-                } else if speechRecognizer.isInterrupted {
-                    Image(systemName: "pause.circle.fill")
-                        .foregroundStyle(Color.blueVibrant)
-                    Text("Пауза")
-                        .foregroundStyle(Color.blueVibrant)
+                // Фиксированный контейнер для стабильного layout на iPad
+                ZStack {
+                    if speechRecognizer.isRecording && !speechRecognizer.isInterrupted {
+                        HStack(spacing: 6) {
+                            RecordingIndicatorDot()
+                            Text("Запись")
+                                .foregroundStyle(Color.pinkVibrant)
+                        }
+                    } else if speechRecognizer.isInterrupted {
+                        HStack(spacing: 6) {
+                            Image(systemName: "pause.circle.fill")
+                                .foregroundStyle(Color.blueVibrant)
+                            Text("Пауза")
+                                .foregroundStyle(Color.blueVibrant)
+                        }
+                    }
                 }
+                .frame(minWidth: 80, alignment: .leading)
             }
             .font(.caption)
             .textCase(.uppercase)
@@ -359,6 +364,25 @@ private struct InterimTextView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.green.opacity(0.1))
         .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+// MARK: - Recording Indicator Dot (стабильная анимация для iPad)
+
+private struct RecordingIndicatorDot: View {
+    @State private var isPulsing = false
+    
+    var body: some View {
+        Circle()
+            .fill(Color.pinkVibrant)
+            .frame(width: 8, height: 8)
+            .scaleEffect(isPulsing ? 1.2 : 1.0)
+            .opacity(isPulsing ? 0.8 : 1.0)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                    isPulsing = true
+                }
+            }
     }
 }
 

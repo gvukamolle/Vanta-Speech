@@ -441,7 +441,13 @@ final class RecordingCoordinator: ObservableObject {
         debugLog("Realtime stop: processedChunks=\(chunkURLs.count), textLength=\(finalTranscription.count)", module: "RecordingCoordinator")
         var finalAudioURL = ""
 
-        if !chunkURLs.isEmpty {
+        if let continuousURL = realtimeSpeechRecognizer.continuousRecordingURL,
+           FileManager.default.fileExists(atPath: continuousURL.path) {
+            finalAudioURL = continuousURL.path
+            debugLog("Using continuous realtime audio: \(continuousURL.lastPathComponent)", module: "RecordingCoordinator")
+        }
+
+        if finalAudioURL.isEmpty, !chunkURLs.isEmpty {
             do {
                 let mergedURL = try await audioRecorder.mergeMultipleAudioFiles(urls: chunkURLs)
                 finalAudioURL = mergedURL.path

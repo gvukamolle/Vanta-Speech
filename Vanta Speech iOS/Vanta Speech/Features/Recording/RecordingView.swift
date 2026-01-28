@@ -242,6 +242,9 @@ struct PulseAnimation: ViewModifier {
             .onAppear {
                 isPulsing = true
             }
+            // Fix for iPad: contain the animation within fixed frame to prevent layout shifts
+            .frame(width: 12, height: 12)
+            .clipped()
     }
 }
 

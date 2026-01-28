@@ -4,6 +4,7 @@ import SwiftUI
 struct RecordingCard: View {
     let recording: Recording
     var onTap: () -> Void = {}
+    var onDelete: (() -> Void)?
 
     var body: some View {
         Button(action: onTap) {
@@ -99,6 +100,21 @@ struct RecordingCard: View {
         }
         .buttonStyle(.plain)
         .contentShape(Rectangle())
+        .contextMenu {
+            Button {
+                onTap()
+            } label: {
+                Label("Открыть", systemImage: "arrow.right.circle")
+            }
+
+            if let onDelete {
+                Button(role: .destructive) {
+                    onDelete()
+                } label: {
+                    Label("Удалить", systemImage: "trash")
+                }
+            }
+        }
     }
 
     private var statusColor: Color {

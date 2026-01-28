@@ -39,6 +39,8 @@ final class RealtimeSpeechRecognizer: NSObject, ObservableObject {
     private let audioEngine = AVAudioEngine()
 
     private var audioFile: AVAudioFile?
+    private var continuousFile: AVAudioFile?
+    private(set) var continuousRecordingURL: URL?
     private var currentChunkURL: URL?
     private var chunkIndex = 0
 
@@ -49,6 +51,8 @@ final class RealtimeSpeechRecognizer: NSObject, ObservableObject {
 
     private var pauseTimer: Timer?
     private var metricsTimer: Timer?
+    private var isTapInstalled = false
+    private var isRotatingPhrase = false
 
     private let fileManager = FileManager.default
 
@@ -59,12 +63,11 @@ final class RealtimeSpeechRecognizer: NSObject, ObservableObject {
         return value > 0 ? value : 3.0  // Default 3.0 секунды
     }
 
-    /// Минимальное количество слов для отправки фразы
-    /// Защита от галлюцинаций Whisper на коротких аудио
-    private var minimumWordCount: Int {
-        let value = UserDefaults.standard.integer(forKey: "realtime_minWordCount")
-        return value > 0 ? value : 10
-    }
+    /// Минимальная длительность чанка (секунды) для авто-нарезки
+    private let minChunkDuration: TimeInterval = 60.0
+
+    /// Максимальная длительность чанка (секунды) для принудительной ротации
+    private let maxChunkDuration: TimeInterval = 300.0
 
     // MARK: - Directories
 
@@ -137,6 +140,14 @@ final class RealtimeSpeechRecognizer: NSObject, ObservableObject {
         currentPhraseText = ""
         recordingDuration = 0
         isInterrupted = false
+        isRotatingPhrase = false
+
+        // Prepare continuous recording file
+        let inputNode = audioEngine.inputNode
+        let recordingFormat = inputNode.outputFormat(forBus: 0)
+        let continuousURL = recordingsDirectory.appendingPathComponent("realtime_full_\(Date().timeIntervalSince1970).wav")
+        continuousFile = try AVAudioFile(forWriting: continuousURL, settings: recordingFormat.settings)
+        continuousRecordingURL = continuousURL
 
         // Start new phrase
         try startNewPhrase()
@@ -148,7 +159,7 @@ final class RealtimeSpeechRecognizer: NSObject, ObservableObject {
         // Запрещаем гашение экрана во время записи
         UIApplication.shared.isIdleTimerDisabled = true
 
-        debugLog("Realtime config: pauseThreshold=\(String(format: "%.2f", pauseThreshold))s, minWordCount=\(minimumWordCount)", module: "RealtimeSpeechRecognizer")
+        debugLog("Realtime config: pauseThreshold=\(String(format: "%.2f", pauseThreshold))s, minChunk=\(String(format: "%.2f", minChunkDuration))s, maxChunk=\(String(format: "%.2f", maxChunkDuration))s", module: "RealtimeSpeechRecognizer")
         debugLog("Recording started", module: "RealtimeSpeechRecognizer")
     }
 
@@ -168,9 +179,11 @@ final class RealtimeSpeechRecognizer: NSObject, ObservableObject {
 
         audioEngine.stop()
         audioEngine.inputNode.removeTap(onBus: 0)
+        isTapInstalled = false
 
         // Закрываем файл перед финализацией, чтобы корректно записалась длительность/размер
         audioFile = nil
+        continuousFile = nil
 
         // Финализируем текущую фразу если есть
         if let _ = currentChunkURL,
@@ -231,7 +244,7 @@ final class RealtimeSpeechRecognizer: NSObject, ObservableObject {
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
-    private func startNewPhrase() throws {
+    private func startNewPhrase(reuseTap: Bool = false) throws {
         // Создаём новый файл для чанка
         let chunkURL = chunksDirectory.appendingPathComponent("chunk_\(chunkIndex)_\(Date().timeIntervalSince1970).wav")
         chunkIndex += 1
@@ -255,26 +268,30 @@ final class RealtimeSpeechRecognizer: NSObject, ObservableObject {
             }
         }
 
-        // Убираем старый tap если есть
-        inputNode.removeTap(onBus: 0)
+        if !reuseTap || !isTapInstalled {
+            // Убираем старый tap если есть
+            inputNode.removeTap(onBus: 0)
 
-        // Устанавливаем tap на входной узел
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
-            // Пишем в файл
-            try? self?.audioFile?.write(from: buffer)
+            // Устанавливаем tap на входной узел
+            inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
+                // Пишем в файл
+                try? self?.audioFile?.write(from: buffer)
+                try? self?.continuousFile?.write(from: buffer)
 
-            // Отправляем в распознаватель
-            self?.recognitionRequest?.append(buffer)
+                // Отправляем в распознаватель
+                self?.recognitionRequest?.append(buffer)
 
-            // Обновляем уровень звука
-            DispatchQueue.main.async {
-                self?.updateAudioLevel(buffer: buffer)
+                // Обновляем уровень звука
+                DispatchQueue.main.async {
+                    self?.updateAudioLevel(buffer: buffer)
+                }
             }
-        }
 
-        // Запускаем audio engine
-        audioEngine.prepare()
-        try audioEngine.start()
+            // Запускаем audio engine
+            audioEngine.prepare()
+            try audioEngine.start()
+            isTapInstalled = true
+        }
 
         phraseStartTime = Date()
         lastSpeechTime = Date()
@@ -322,75 +339,103 @@ final class RealtimeSpeechRecognizer: NSObject, ObservableObject {
         guard isRecording,
               !isInterrupted,
               let phraseStart = phraseStartTime,
-              !currentPhraseText.isEmpty else {
+              let chunkURL = currentChunkURL else {
             // Если текста нет, просто продолжаем ждать
             resetPauseTimer()
             return
         }
 
-        // Проверяем минимальное количество слов (защита от галлюцинаций Whisper)
-        let wordCount = currentPhraseText.split(separator: " ").count
-        if wordCount < minimumWordCount {
-            // Слов недостаточно — продолжаем ждать
-            debugLog("Word count \(wordCount) < \(minimumWordCount), waiting for more speech...", module: "RealtimeSpeechRecognizer")
+        // Проверяем минимальную длительность чанка
+        let phraseDuration = Date().timeIntervalSince(phraseStart)
+        if phraseDuration < minChunkDuration {
+            debugLog("Chunk duration \(String(format: "%.2f", phraseDuration))s < \(String(format: "%.2f", minChunkDuration))s, waiting...", module: "RealtimeSpeechRecognizer")
             resetPauseTimer()
             return
         }
 
-        let phraseDuration = Date().timeIntervalSince(phraseStart)
-        finishCurrentPhrase(duration: phraseDuration)
-
-        // Начинаем новую фразу
-        do {
-            // Останавливаем текущий recognition
-            recognitionTask?.cancel()
-            recognitionTask = nil
-            recognitionRequest?.endAudio()
-            recognitionRequest = nil
-
-            audioEngine.stop()
-            audioEngine.inputNode.removeTap(onBus: 0)
-            audioFile = nil
-
-            // Небольшая задержка перед новой фразой
-            Task {
-                try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
-                if self.isRecording && !self.isInterrupted {
-                    try? self.startNewPhrase()
-                }
-            }
-        }
+        let trimmedText = currentPhraseText.trimmingCharacters(in: .whitespacesAndNewlines)
+        rotatePhrase(
+            reason: "pause",
+            chunkURL: chunkURL,
+            phraseText: currentPhraseText,
+            phraseDuration: phraseDuration,
+            allowEmptyText: trimmedText.isEmpty
+        )
     }
 
     private func finishCurrentPhrase(duration: TimeInterval, allowEmptyText: Bool = false) {
         guard let chunkURL = currentChunkURL else { return }
 
-        let text = currentPhraseText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = currentPhraseText
+        finalizeChunk(
+            chunkURL: chunkURL,
+            text: text,
+            duration: duration,
+            allowEmptyText: allowEmptyText
+        )
+
+        currentPhraseText = ""
+        interimText = ""
+        currentChunkURL = nil
+    }
+
+    private func rotatePhrase(
+        reason: String,
+        chunkURL: URL,
+        phraseText: String,
+        phraseDuration: TimeInterval,
+        allowEmptyText: Bool
+    ) {
+        guard !isRotatingPhrase else { return }
+        isRotatingPhrase = true
+
+        // Останавливаем текущий recognition
+        recognitionRequest?.endAudio()
+        recognitionRequest = nil
+        recognitionTask?.cancel()
+        recognitionTask = nil
+
+        do {
+            try startNewPhrase(reuseTap: true)
+        } catch {
+            debugLog("Failed to start new phrase after \(reason): \(error)", module: "RealtimeSpeechRecognizer", level: .error)
+        }
+
+        finalizeChunk(
+            chunkURL: chunkURL,
+            text: phraseText,
+            duration: phraseDuration,
+            allowEmptyText: allowEmptyText
+        )
+
+        isRotatingPhrase = false
+    }
+
+    private func finalizeChunk(
+        chunkURL: URL,
+        text: String,
+        duration: TimeInterval,
+        allowEmptyText: Bool
+    ) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let fileSizeBytes = (try? fileManager.attributesOfItem(atPath: chunkURL.path)[.size] as? NSNumber)?.intValue ?? 0
 
-        if !text.isEmpty || allowEmptyText {
-            if text.isEmpty && allowEmptyText {
+        if !trimmed.isEmpty || allowEmptyText {
+            if trimmed.isEmpty && allowEmptyText {
                 // Проверяем что файл не пустой
                 if fileSizeBytes == 0 {
                     try? fileManager.removeItem(at: chunkURL)
-                    currentPhraseText = ""
-                    interimText = ""
-                    currentChunkURL = nil
                     debugLog("Dropping empty chunk: \(chunkURL.lastPathComponent)", module: "RealtimeSpeechRecognizer", level: .warning)
                     return
                 }
             }
             let fileSizeKB = Double(fileSizeBytes) / 1024.0
-            debugLog("Phrase completed: '\(text.prefix(50))...', duration: \(String(format: "%.2f", duration))s, size: \(String(format: "%.1f", fileSizeKB)) KB", module: "RealtimeSpeechRecognizer")
-            onPhraseCompleted?(chunkURL, duration, text)
+            debugLog("Phrase completed: '\(trimmed.prefix(50))...', duration: \(String(format: "%.2f", duration))s, size: \(String(format: "%.1f", fileSizeKB)) KB", module: "RealtimeSpeechRecognizer")
+            onPhraseCompleted?(chunkURL, duration, trimmed)
         } else {
             // Удаляем пустой чанк
             try? fileManager.removeItem(at: chunkURL)
         }
-
-        currentPhraseText = ""
-        interimText = ""
-        currentChunkURL = nil
     }
 
     private func updateAudioLevel(buffer: AVAudioPCMBuffer) {
@@ -414,6 +459,23 @@ final class RealtimeSpeechRecognizer: NSObject, ObservableObject {
             DispatchQueue.main.async {
                 guard let self = self, let startTime = self.startTime, !self.isInterrupted else { return }
                 self.recordingDuration = Date().timeIntervalSince(startTime)
+
+                if let phraseStart = self.phraseStartTime,
+                   Date().timeIntervalSince(phraseStart) >= self.maxChunkDuration,
+                   let chunkURL = self.currentChunkURL {
+                    let phraseDuration = Date().timeIntervalSince(phraseStart)
+                    debugLog(
+                        "Max chunk duration reached (\(String(format: "%.2f", self.maxChunkDuration))s), rotating chunk",
+                        module: "RealtimeSpeechRecognizer"
+                    )
+                    self.rotatePhrase(
+                        reason: "maxDuration",
+                        chunkURL: chunkURL,
+                        phraseText: self.currentPhraseText,
+                        phraseDuration: phraseDuration,
+                        allowEmptyText: true
+                    )
+                }
             }
         }
         if let timer = metricsTimer {

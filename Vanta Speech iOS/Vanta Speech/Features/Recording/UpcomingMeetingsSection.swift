@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 import Combine
 
@@ -546,12 +547,55 @@ private extension String {
             result = result.replacingOccurrences(of: entity, with: char)
         }
 
+        // Decode numeric HTML entities (decimal and hex)
+        result = result.decodingNumericHTMLEntities()
+
         // Clean up multiple newlines
         while result.contains("\n\n\n") {
             result = result.replacingOccurrences(of: "\n\n\n", with: "\n\n")
         }
 
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    func decodingNumericHTMLEntities() -> String {
+        let pattern = "&#(x?[0-9A-Fa-f]+);"
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return self }
+
+        let nsRange = NSRange(startIndex..<endIndex, in: self)
+        let matches = regex.matches(in: self, range: nsRange)
+        guard !matches.isEmpty else { return self }
+
+        var output = ""
+        var lastIndex = startIndex
+
+        for match in matches {
+            guard let range = Range(match.range, in: self) else { continue }
+            output.append(contentsOf: self[lastIndex..<range.lowerBound])
+
+            if let codeRange = Range(match.range(at: 1), in: self) {
+                let codeString = String(self[codeRange])
+                let value: UInt32?
+                if codeString.lowercased().hasPrefix("x") {
+                    value = UInt32(codeString.dropFirst(), radix: 16)
+                } else {
+                    value = UInt32(codeString, radix: 10)
+                }
+
+                if let value, let scalar = UnicodeScalar(value) {
+                    output.append(Character(scalar))
+                } else {
+                    output.append(contentsOf: self[range])
+                }
+            } else {
+                output.append(contentsOf: self[range])
+            }
+
+            lastIndex = range.upperBound
+        }
+
+        output.append(contentsOf: self[lastIndex...])
+        return output
     }
 }
 
