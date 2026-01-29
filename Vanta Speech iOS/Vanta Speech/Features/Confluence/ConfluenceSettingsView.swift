@@ -28,6 +28,7 @@ struct ConfluenceSettingsView: View {
         } message: {
             Text(errorMessage)
         }
+        .tint(.primary)
         .sheet(isPresented: $showLocationPicker) {
             ConfluenceLocationPickerView { spaceKey, pageId, pageTitle in
                 manager.saveDefaultExportLocation(

@@ -37,6 +37,7 @@ struct EASCalendarSettingsView: View {
         } message: {
             Text(errorMessage)
         }
+        .tint(.primary)
     }
 
     // MARK: - Connected State

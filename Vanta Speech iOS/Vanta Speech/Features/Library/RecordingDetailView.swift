@@ -75,10 +75,10 @@ struct RecordingDetailView: View {
                     shareMenuContent
                 } label: {
                     Image(systemName: "ellipsis.circle")
-                        .foregroundStyle(.primary)
                 }
             }
         }
+        .tint(.primary)
         .onAppear {
             loadAudio()
         }

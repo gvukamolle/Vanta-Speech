@@ -32,6 +32,7 @@ struct VersionTapView: View {
         .alert("Режим отладки отключён", isPresented: $showDebugDeactivated) {
             Button("OK") {}
         }
+        .tint(.primary)
     }
 
     private var appVersion: String {

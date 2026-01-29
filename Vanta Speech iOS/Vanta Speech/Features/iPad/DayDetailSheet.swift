@@ -167,6 +167,7 @@ struct DayDetailSheet: View {
         } message: {
             Text(errorMessage)
         }
+        .tint(.primary)
     }
     
     // MARK: - Custom Header
@@ -181,26 +182,13 @@ struct DayDetailSheet: View {
                 } label: {
                     Image(systemName: "square.and.arrow.down")
                         .font(.title2)
-                        .foregroundStyle(Color.pinkVibrant)
+                        .foregroundStyle(.primary)
                         .frame(width: 44, height: 44)
                         .background(.ultraThinMaterial)
                         .clipShape(Circle())
                 }
                 
                 Spacer()
-                
-                // Кнопка закрыть (справа)
-                Button {
-                    onDismiss()
-                } label: {
-                    Text("Закрыть")
-                        .font(.headline)
-                        .foregroundStyle(Color.pinkVibrant)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(.ultraThinMaterial)
-                        .clipShape(Capsule())
-                }
             }
             
             // Дата (большая, по центру)

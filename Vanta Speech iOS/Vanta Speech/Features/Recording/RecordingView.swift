@@ -118,6 +118,7 @@ struct RecordingView: View {
             } message: {
                 Text("В этом режиме не сворачивайте приложение. При сворачивании запись будет приостановлена.")
             }
+            .tint(.primary)
             .fileImporter(
                 isPresented: $viewModel.showFileImporter,
                 allowedContentTypes: AudioImporter.supportedTypes,

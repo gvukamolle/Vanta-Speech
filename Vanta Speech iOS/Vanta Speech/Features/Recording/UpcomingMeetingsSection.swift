@@ -247,6 +247,7 @@ private struct MeetingCard: View {
         } message: {
             Text("В этом режиме не сворачивайте приложение. При сворачивании запись будет приостановлена.")
         }
+        .tint(.primary)
     }
 
     private var isRealtimeMode: Bool {

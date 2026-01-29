@@ -56,6 +56,7 @@ struct ConfluenceExportSheet: View {
             } message: {
                 Text(errorMessage)
             }
+            .tint(.primary)
         }
     }
 

@@ -81,10 +81,10 @@ struct DayRecordingsSheet: View {
                         showFileImporter = true
                     } label: {
                         Image(systemName: "square.and.arrow.down")
-                            .foregroundStyle(.primary)
                     }
                 }
             }
+            .tint(.primary)
             .presentationDragIndicator(.visible)
             .fileImporter(
                 isPresented: $showFileImporter,

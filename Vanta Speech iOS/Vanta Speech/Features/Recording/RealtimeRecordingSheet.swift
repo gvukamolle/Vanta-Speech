@@ -58,13 +58,15 @@ struct RealtimeRecordingSheet: View {
         } message: {
             Text("Приложение было свёрнуто. Real-time транскрипция работает только при активном приложении.")
         }
+        .tint(.primary)
         .alert("Нет расшифровки", isPresented: $showNoTranscriptionWarning) {
-            Button("Удалить запись") {
+            Button("Удалить запись", role: .destructive) {
                 discardRecording()
             }
         } message: {
             Text("Запись не содержит распознанной речи. Возможно, микрофон не работал или запись была слишком короткой. Запись не будет сохранена.")
         }
+        .tint(.primary)
     }
     
     // MARK: - Recording Control
