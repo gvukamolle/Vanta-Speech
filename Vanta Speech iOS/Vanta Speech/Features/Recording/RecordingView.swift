@@ -143,6 +143,18 @@ struct RecordingView: View {
                     .presentationDetents([.medium])
                 }
             }
+            .meetingLinkingAlert(
+                isPresented: $viewModel.showMeetingLinkWarning,
+                for: viewModel.realtimeRecording ?? Recording(title: "", audioFileURL: ""),
+                onSend: {
+                    viewModel.proceedWithRealtimeSummary()
+                },
+                onLink: {
+                    // Для real-time открываем RecordingDetailView с выбором встречи
+                    // Запись уже сохранена, пользователь может привязать вручную
+                    viewModel.cancelRealtimeSummary()
+                }
+            )
             .overlay {
                 if viewModel.isImporting {
                     Color.black.opacity(0.3)

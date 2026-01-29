@@ -24,6 +24,10 @@ struct RecordingDetailView: View {
     @State private var showEventPicker = false
     @State private var showMeetingDetail = false
     @State private var showMeetingActions = false
+    
+    // Meeting linking warning
+    @State private var showMeetingLinkWarning = false
+    @State private var pendingTranscriptionAction: (() -> Void)?
 
     // Title editing
     @State private var showTitleEditor = false
@@ -116,6 +120,21 @@ struct RecordingDetailView: View {
                     .environmentObject(coordinator.audioRecorder)
             }
         }
+        .meetingLinkingAlert(
+            isPresented: $showMeetingLinkWarning,
+            for: recording,
+            onSend: {
+                // User chose to send without linking
+                if let action = pendingTranscriptionAction {
+                    action()
+                }
+                pendingTranscriptionAction = nil
+            },
+            onLink: {
+                // User chose to link - show event picker
+                showEventPicker = true
+            }
+        )
     }
 
     // MARK: - Header Card
@@ -275,7 +294,7 @@ struct RecordingDetailView: View {
     private var transcribeButton: some View {
         VStack(spacing: 12) {
             Button {
-                transcribeRecording()
+                checkAndStartTranscription()
             } label: {
                 HStack(spacing: 8) {
                     if isAnyTranscribing {
@@ -284,7 +303,7 @@ struct RecordingDetailView: View {
                     } else {
                         Image(systemName: "wand.and.stars")
                     }
-                    Text(isAnyTranscribing ? "Транскрибирую..." : "Транскрибировать")
+                    Text(isAnyTranscribing ? "Получаем саммари..." : "Получить саммари")
                         .fontWeight(.semibold)
                 }
                 .foregroundStyle(.primary)
@@ -427,41 +446,55 @@ struct RecordingDetailView: View {
     /// Callback for regenerating summary from transcription
     private var regenerateSummaryCallback: (() async -> Void)? {
         guard recording.transcriptionText != nil else { return nil }
-        return {
-            guard let transcription = self.recording.transcriptionText else { return }
-            let preset = self.recording.preset ?? .projectMeeting
+        return { [self] in
+            // Проверяем привязку перед регенерацией саммари
+            if !self.recording.hasLinkedMeeting && !self.eventsForLinking.isEmpty {
+                // Сохраняем действие и показываем предупреждение
+                self.pendingTranscriptionAction = { [self] in
+                    self.performRegenerateSummaryInternal()
+                }
+                self.showMeetingLinkWarning = true
+                return
+            }
+            
+            await self.performRegenerateSummary()
+        }
+    }
+    
+    private func performRegenerateSummary() async {
+        guard let transcription = self.recording.transcriptionText else { return }
+        let preset = self.recording.preset ?? .projectMeeting
 
-            debugLog("Starting summary regeneration (preset: \(preset.rawValue))", module: "RecordingDetail", level: .info)
+        debugLog("Starting summary regeneration (preset: \(preset.rawValue))", module: "RecordingDetail", level: .info)
 
-            // Устанавливаем флаг генерации (чтобы кнопка "Саммари" показывала состояние)
+        // Устанавливаем флаг генерации (чтобы кнопка "Саммари" показывала состояние)
+        await MainActor.run {
+            self.recording.isSummaryGenerating = true
+        }
+
+        defer {
+            Task { @MainActor in
+                self.recording.isSummaryGenerating = false
+                debugLog("Summary regeneration finished", module: "RecordingDetail", level: .info)
+            }
+        }
+
+        do {
+            let service = TranscriptionService()
+            debugLog("Calling TranscriptionService.summarize...", module: "RecordingDetail", level: .info)
+
+            let (newSummary, _) = try await service.summarize(
+                text: transcription,
+                preset: preset
+            )
+
+            debugLog("Summary regenerated successfully (\(newSummary.count) chars)", module: "RecordingDetail", level: .info)
+
             await MainActor.run {
-                self.recording.isSummaryGenerating = true
+                self.recording.summaryText = newSummary
             }
-
-            defer {
-                Task { @MainActor in
-                    self.recording.isSummaryGenerating = false
-                    debugLog("Summary regeneration finished", module: "RecordingDetail", level: .info)
-                }
-            }
-
-            do {
-                let service = TranscriptionService()
-                debugLog("Calling TranscriptionService.summarize...", module: "RecordingDetail", level: .info)
-
-                let (newSummary, _) = try await service.summarize(
-                    text: transcription,
-                    preset: preset
-                )
-
-                debugLog("Summary regenerated successfully (\(newSummary.count) chars)", module: "RecordingDetail", level: .info)
-
-                await MainActor.run {
-                    self.recording.summaryText = newSummary
-                }
-            } catch {
-                debugLog("Failed to regenerate summary: \(error)", module: "RecordingDetail", level: .error)
-            }
+        } catch {
+            debugLog("Failed to regenerate summary: \(error)", module: "RecordingDetail", level: .error)
         }
     }
 
@@ -796,6 +829,25 @@ struct RecordingDetailView: View {
         }
     }
 
+    // MARK: - Meeting Linking Check
+    
+    /// Проверяет привязку к встрече перед транскрибацией
+    private func checkAndStartTranscription() {
+        // Если запись уже привязана или нет событий для привязки - сразу транскрибируем
+        if recording.hasLinkedMeeting || eventsForLinking.isEmpty {
+            transcribeRecording()
+            return
+        }
+        
+        // Сохраняем действие для выполнения после алерта
+        pendingTranscriptionAction = { [self] in
+            self.transcribeRecording()
+        }
+        
+        // Показываем предупреждение
+        showMeetingLinkWarning = true
+    }
+    
     private func transcribeRecording() {
         if isAnyTranscribing {
             return
@@ -932,6 +984,21 @@ struct RecordingDetailView: View {
     }
 
     private func regenerateSummary() {
+        guard let transcription = recording.transcriptionText else { return }
+        
+        // Проверяем привязку перед регенерацией
+        if !recording.hasLinkedMeeting && !eventsForLinking.isEmpty {
+            pendingTranscriptionAction = { [self] in
+                self.performRegenerateSummaryInternal()
+            }
+            showMeetingLinkWarning = true
+            return
+        }
+        
+        performRegenerateSummaryInternal()
+    }
+    
+    private func performRegenerateSummaryInternal() {
         guard let transcription = recording.transcriptionText else { return }
 
         isGeneratingSummary = true
@@ -1154,17 +1221,13 @@ struct ContentSheetView: View {
     // Confluence manager
     @StateObject private var confluenceManager = ConfluenceManager.shared
 
-    // Integration states from settings
-    @AppStorage("notion_connected") private var notionConnected = false
-    @AppStorage("googledocs_connected") private var googleDocsConnected = false
-
     /// Confluence export available when manager is available and we have a recording with summary
     private var canExportToConfluence: Bool {
         confluenceManager.isAvailable && recording != nil && recording?.summaryText != nil
     }
 
     private var hasAnyIntegration: Bool {
-        canExportToConfluence || notionConnected || googleDocsConnected
+        canExportToConfluence
     }
 
     var body: some View {
@@ -1224,34 +1287,6 @@ struct ContentSheetView: View {
                                             .foregroundStyle(.primary)
                                     } icon: {
                                         Image(systemName: "doc.text")
-                                            .foregroundStyle(.primary)
-                                    }
-                                }
-                            }
-
-                            if notionConnected {
-                                Button {
-                                    exportToNotion()
-                                } label: {
-                                    Label {
-                                        Text("Notion")
-                                            .foregroundStyle(.primary)
-                                    } icon: {
-                                        Image(systemName: "doc.richtext")
-                                            .foregroundStyle(.primary)
-                                    }
-                                }
-                            }
-
-                            if googleDocsConnected {
-                                Button {
-                                    exportToGoogleDocs()
-                                } label: {
-                                    Label {
-                                        Text("Google Docs")
-                                            .foregroundStyle(.primary)
-                                    } icon: {
-                                        Image(systemName: "doc.text.fill")
                                             .foregroundStyle(.primary)
                                     }
                                 }
@@ -1398,16 +1433,6 @@ struct ContentSheetView: View {
             topController.present(activityVC, animated: true)
         }
         #endif
-    }
-
-    private func exportToNotion() {
-        // TODO: Implement Notion export
-        debugLog("Export to Notion: \(title)", module: "ContentSheetView")
-    }
-
-    private func exportToGoogleDocs() {
-        // TODO: Implement Google Docs export
-        debugLog("Export to Google Docs: \(title)", module: "ContentSheetView")
     }
 
     /// Convert checkboxes to symbols for easier editing

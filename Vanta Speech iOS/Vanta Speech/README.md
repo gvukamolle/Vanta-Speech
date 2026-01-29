@@ -9,7 +9,7 @@ iOS приложение для записи, транскрипции и сам
 - **Summarization** - Автоматическое создание саммари встречи
 - **Playback** - Воспроизведение записей с удобным плеером
 - **Library** - Управление записями с поиском и фильтрацией
-- **Export** - Интеграция с Confluence, Notion, Google Docs (planned)
+- **Export** - Интеграция с Confluence
 
 ## Quick Start
 

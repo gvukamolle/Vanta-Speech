@@ -16,6 +16,11 @@ struct TodayRecordingsSection: View {
     @State private var showSummarySheet = false
     @State private var recordingForTranscription: Recording?
     @State private var recordingForSummary: Recording?
+    
+    // Meeting linking warning
+    @State private var showMeetingLinkWarning = false
+    @State private var pendingRecordingAction: (() -> Void)?
+    @State private var recordingForLinkWarning: Recording?
 
     private let calendar = Calendar.current
 
@@ -143,6 +148,23 @@ struct TodayRecordingsSection: View {
             .adaptiveSheet()
             .presentationDragIndicator(.visible)
         }
+        .meetingLinkingAlert(
+            isPresented: $showMeetingLinkWarning,
+            for: recordingForLinkWarning ?? Recording(title: "", audioFileURL: ""),
+            onSend: {
+                if let action = pendingRecordingAction {
+                    action()
+                }
+                pendingRecordingAction = nil
+                recordingForLinkWarning = nil
+            },
+            onLink: {
+                if let recording = recordingForLinkWarning {
+                    recordingForSuggestion = recording
+                    showAllEventsPicker = true
+                }
+            }
+        )
     }
     
     // MARK: - Single Recording Row
@@ -171,15 +193,13 @@ struct TodayRecordingsSection: View {
                     deleteRecording(recording)
                 },
                 onTranscribe: !recording.isTranscribed ? {
-                    transcribeRecording(recording)
+                    checkAndTranscribeRecording(recording)
                 } : nil,
                 onViewTranscription: recording.isTranscribed ? {
                     recordingForTranscription = recording
                 } : nil,
                 onGenerateSummary: recording.isTranscribed && recording.summaryText == nil && !recording.isSummaryGenerating ? {
-                    Task {
-                        await RecordingCoordinator.shared.generateSummary(for: recording)
-                    }
+                    checkAndGenerateSummary(recording)
                 } : nil,
                 onViewSummary: recording.summaryText != nil ? {
                     recordingForSummary = recording
@@ -203,9 +223,7 @@ struct TodayRecordingsSection: View {
                     showTranscriptionSheet = true
                 } : nil,
                 onGenerateSummary: recording.isTranscribed && recording.summaryText == nil && !recording.isSummaryGenerating ? {
-                    Task {
-                        await RecordingCoordinator.shared.generateSummary(for: recording)
-                    }
+                    checkAndGenerateSummary(recording)
                 } : nil,
                 onViewSummary: recording.summaryText != nil ? {
                     recordingForSummary = recording
@@ -242,6 +260,46 @@ struct TodayRecordingsSection: View {
             try? FileManager.default.removeItem(atPath: recording.audioFileURL)
         }
         modelContext.delete(recording)
+    }
+    
+    // MARK: - Meeting Linking Check
+    
+    private func checkAndTranscribeRecording(_ recording: Recording) {
+        // Если запись уже привязана или нет событий для привязки - сразу транскрибируем
+        if recording.hasLinkedMeeting || eventsForRecording(recording).isEmpty {
+            transcribeRecording(recording)
+            return
+        }
+        
+        // Сохраняем действие для выполнения после алерта
+        recordingForLinkWarning = recording
+        pendingRecordingAction = { [self] in
+            self.transcribeRecording(recording)
+        }
+        
+        // Показываем предупреждение
+        showMeetingLinkWarning = true
+    }
+    
+    private func checkAndGenerateSummary(_ recording: Recording) {
+        // Если запись уже привязана или нет событий для привязки - сразу генерируем
+        if recording.hasLinkedMeeting || eventsForRecording(recording).isEmpty {
+            Task {
+                await RecordingCoordinator.shared.generateSummary(for: recording)
+            }
+            return
+        }
+        
+        // Сохраняем действие для выполнения после алерта
+        recordingForLinkWarning = recording
+        pendingRecordingAction = { 
+            Task {
+                await RecordingCoordinator.shared.generateSummary(for: recording)
+            }
+        }
+        
+        // Показываем предупреждение
+        showMeetingLinkWarning = true
     }
     
     private func transcribeRecording(_ recording: Recording) {

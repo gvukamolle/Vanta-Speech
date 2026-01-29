@@ -28,8 +28,6 @@ class SecurePreferencesManager @Inject constructor(
         private const val KEY_EAS_CREDENTIALS = "eas_credentials"
         private const val KEY_EAS_DEVICE_ID = "eas_device_id"
         private const val KEY_EAS_SYNC_STATE = "eas_sync_state"
-        private const val KEY_GOOGLE_REFRESH_TOKEN = "google_refresh_token"
-        private const val KEY_GOOGLE_USER_INFO = "google_user_info"
     }
 
     private val json = Json {
@@ -156,64 +154,6 @@ class SecurePreferencesManager @Inject constructor(
             .remove(KEY_EAS_SYNC_STATE)
             .apply()
     }
-
-    // MARK: - Google OAuth Storage (for future use)
-
-    fun saveGoogleRefreshToken(token: String): Boolean {
-        return try {
-            encryptedPrefs.edit().putString(KEY_GOOGLE_REFRESH_TOKEN, token).apply()
-            true
-        } catch (e: Exception) {
-            false
-        }
-    }
-
-    fun loadGoogleRefreshToken(): String? {
-        return encryptedPrefs.getString(KEY_GOOGLE_REFRESH_TOKEN, null)
-    }
-
-    fun deleteGoogleRefreshToken() {
-        encryptedPrefs.edit().remove(KEY_GOOGLE_REFRESH_TOKEN).apply()
-    }
-
-    fun saveGoogleUserInfo(email: String, displayName: String?, profileImageUrl: String?): Boolean {
-        return try {
-            val infoJson = json.encodeToString(
-                mapOf(
-                    "email" to email,
-                    "displayName" to (displayName ?: ""),
-                    "profileImageUrl" to (profileImageUrl ?: "")
-                )
-            )
-            encryptedPrefs.edit().putString(KEY_GOOGLE_USER_INFO, infoJson).apply()
-            true
-        } catch (e: Exception) {
-            false
-        }
-    }
-
-    fun loadGoogleUserInfo(): Triple<String, String?, String?>? {
-        return try {
-            val infoJson = encryptedPrefs.getString(KEY_GOOGLE_USER_INFO, null) ?: return null
-            val map = json.decodeFromString<Map<String, String>>(infoJson)
-            Triple(
-                map["email"] ?: return null,
-                map["displayName"]?.takeIf { it.isNotEmpty() },
-                map["profileImageUrl"]?.takeIf { it.isNotEmpty() }
-            )
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    fun deleteGoogleCredentials() {
-        encryptedPrefs.edit()
-            .remove(KEY_GOOGLE_REFRESH_TOKEN)
-            .remove(KEY_GOOGLE_USER_INFO)
-            .apply()
-    }
-
-    fun hasGoogleCredentials(): Boolean = loadGoogleRefreshToken() != null
 
     // MARK: - Clear All
 

@@ -195,26 +195,7 @@ fun SettingsScreen(
 
                 SettingsNavigationItem(
                     icon = Icons.Default.Description,
-                    title = "Google Docs",
-                    value = "Не подключено",
-                    onClick = { /* TODO: Navigate to GoogleDocsSettings */ }
-                )
-
-                SettingsDivider()
-
-                SettingsNavigationItem(
-                    icon = Icons.Default.Description,
                     title = "Confluence",
-                    value = "Скоро",
-                    onClick = { /* TODO */ },
-                    enabled = false
-                )
-
-                SettingsDivider()
-
-                SettingsNavigationItem(
-                    icon = Icons.Default.Description,
-                    title = "Notion",
                     value = "Скоро",
                     onClick = { /* TODO */ },
                     enabled = false

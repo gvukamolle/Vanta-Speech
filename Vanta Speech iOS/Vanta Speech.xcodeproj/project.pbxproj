@@ -396,9 +396,14 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "Vanta Speech/Vanta_Speech.entitlements";
 				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEPLOYMENT_POSTPROCESSING = NO;
 				DEVELOPMENT_TEAM = P65TNL498N;
 				ENABLE_PREVIEWS = YES;
+				STRIP_INSTALLED_PRODUCT = NO;
+				STRIP_STYLE = "debugging";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Vanta Speech/Info.plist";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";

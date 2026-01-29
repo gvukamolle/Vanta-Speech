@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import SwiftData
+import SwiftUI
 
 @MainActor
 final class RecordingViewModel: ObservableObject {
@@ -220,13 +221,57 @@ final class RecordingViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Meeting Linking Warning for Realtime
+    
+    @Published var showMeetingLinkWarning = false
+    private var shouldStartRealtimeSummary = false
+    var realtimeRecording: Recording?
+    
     func stopRealtimeRecording() {
         showRealtimeRecordingSheet = false
 
         Task {
-            _ = await coordinator.stopRealtimeRecording()
-            await coordinator.startRealtimeSummarization()
+            if let recording = await coordinator.stopRealtimeRecording() {
+                // Проверяем привязку к встрече
+                let needsWarning = await MainActor.run { () -> Bool in
+                    self.realtimeRecording = recording
+                    let needsLink = !recording.hasLinkedMeeting && !self.todayEvents.isEmpty
+                    if needsLink {
+                        self.shouldStartRealtimeSummary = true
+                        self.showMeetingLinkWarning = true
+                    }
+                    return needsLink
+                }
+                
+                // Если не нужно предупреждение - сразу отправляем на саммари
+                if !needsWarning {
+                    await coordinator.startRealtimeSummarization()
+                }
+            }
         }
+    }
+    
+    func proceedWithRealtimeSummary() {
+        if shouldStartRealtimeSummary {
+            Task {
+                await coordinator.startRealtimeSummarization()
+                await MainActor.run {
+                    self.shouldStartRealtimeSummary = false
+                    self.realtimeRecording = nil
+                }
+            }
+        }
+    }
+    
+    func cancelRealtimeSummary() {
+        shouldStartRealtimeSummary = false
+        realtimeRecording = nil
+    }
+    
+    private var todayEvents: [EASCalendarEvent] {
+        calendarManager.cachedEvents.filter { event in
+            Calendar.current.isDate(event.startTime, inSameDayAs: Date())
+        }.sorted { $0.startTime < $1.startTime }
     }
 
     func handleFileImport(result: Result<[URL], Error>) {
