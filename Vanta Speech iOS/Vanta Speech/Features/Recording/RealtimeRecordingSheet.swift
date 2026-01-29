@@ -52,14 +52,18 @@ struct RealtimeRecordingSheet: View {
                 coordinator.resumeRecording()
                 wasBackgrounded = false
             }
-            Button("Остановить", role: .destructive) {
+            Button("Закончить запись", role: .destructive) {
                 confirmStopRecording()
             }
         } message: {
             Text("Приложение было свёрнуто. Real-time транскрипция работает только при активном приложении.")
         }
         .tint(.primary)
-        .alert("Нет расшифровки", isPresented: $showNoTranscriptionWarning) {
+        .alert("Слишком короткая запись", isPresented: $showNoTranscriptionWarning) {
+            Button("Продолжить запись") {
+                // Just dismiss the alert and continue recording
+                showNoTranscriptionWarning = false
+            }
             Button("Удалить запись", role: .destructive) {
                 discardRecording()
             }

@@ -14,7 +14,7 @@ final class ConfluenceClient: NSObject {
     private var isNetworkAvailable = true
 
     /// Base URL сервера Confluence (HTTPS с самоподписанным сертификатом)
-    private let serverURL = "https://cnfl.b2serv.local"
+    private let serverURL = Env.confluenceServerURL
 
     // MARK: - Initialization
 
@@ -46,7 +46,20 @@ final class ConfluenceClient: NSObject {
 
     /// Проверить наличие credentials (залогинен ли пользователь)
     var hasCredentials: Bool {
-        keychainManager.loadEASCredentials() != nil
+        keychainManager.hasConfluenceCredentials
+    }
+    
+    /// Сохранить credentials для Confluence
+    /// - Parameters:
+    ///   - username: Логин пользователя (без домена)
+    ///   - password: Пароль
+    func saveCredentials(username: String, password: String) throws {
+        try keychainManager.saveConfluenceCredentials(username: username, password: password)
+    }
+    
+    /// Удалить сохраненные credentials
+    func clearCredentials() {
+        keychainManager.deleteConfluenceCredentials()
     }
 
     /// Тест соединения с сервером
@@ -191,23 +204,12 @@ final class ConfluenceClient: NSObject {
     // MARK: - Private Methods
 
     private func getCredentials() throws -> (username: String, password: String) {
-        // Используем EAS credentials (те же AD credentials)
-        guard let easCredentials = keychainManager.loadEASCredentials() else {
+        // Используем отдельные Confluence credentials
+        guard let credentials = keychainManager.loadConfluenceCredentials() else {
             throw ConfluenceError.notAuthenticated
         }
-
-        // Confluence требует username без @-домена (только логин)
-        // EAS хранит как user@domain.com, извлекаем часть до @
-        var username = easCredentials.username
-        if let atIndex = username.firstIndex(of: "@") {
-            username = String(username[..<atIndex])
-        }
-        // Также обрабатываем формат DOMAIN\user
-        if let slashIndex = username.lastIndex(of: "\\") {
-            username = String(username[username.index(after: slashIndex)...])
-        }
-
-        return (username, easCredentials.password)
+        
+        return credentials
     }
 
     private func buildRequest(

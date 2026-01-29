@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 
 struct SettingsView: View {
     @AppStorage("autoTranscribe") private var autoTranscribe = false
@@ -19,6 +20,13 @@ struct SettingsView: View {
 
     // Debug manager
     @StateObject private var debugManager = DebugManager.shared
+    
+    // SwiftData context
+    @Environment(\.modelContext) private var modelContext
+    
+    // Alert states
+    @State private var showLogoutConfirmation = false
+    @State private var showDeleteAllConfirmation = false
 
     var body: some View {
         NavigationStack {
@@ -44,7 +52,20 @@ struct SettingsView: View {
                     }
 
                     Button("Выйти", role: .destructive) {
-                        authManager.logout()
+                        showLogoutConfirmation = true
+                    }
+                    .disabled(authManager.isLoggingOut)
+                    
+                    if authManager.isLoggingOut {
+                        HStack {
+                            Spacer()
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Выход...")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                        }
                     }
                 }
 
@@ -161,7 +182,7 @@ struct SettingsView: View {
 
                 Section {
                     Button("Удалить все записи", role: .destructive) {
-                        // TODO: Implement clear all
+                        showDeleteAllConfirmation = true
                     }
                 }
             }
@@ -172,6 +193,28 @@ struct SettingsView: View {
             }
             .navigationTitle("Настройки")
             .scrollDismissesKeyboard(.interactively)
+            .alert("Подтверждение выхода", isPresented: $showLogoutConfirmation) {
+                Button("Отмена", role: .cancel) { }
+                Button("Выйти", role: .destructive) {
+                    authManager.logout(modelContext: modelContext)
+                }
+            } message: {
+                Text("При выходе из аккаунта все записи будут удалены, а подключения к Exchange и Confluence будут разорваны. Это действие нельзя отменить.")
+            }
+            .alert("Удалить все записи?", isPresented: $showDeleteAllConfirmation) {
+                Button("Отмена", role: .cancel) { }
+                Button("Удалить", role: .destructive) {
+                    deleteAllRecordings()
+                }
+            } message: {
+                Text("Все записи будут безвозвратно удалены. Это действие нельзя отменить.")
+            }
+        }
+    }
+    
+    private func deleteAllRecordings() {
+        Task {
+            await AppResetService.shared.performFullReset(modelContext: modelContext)
         }
     }
 }

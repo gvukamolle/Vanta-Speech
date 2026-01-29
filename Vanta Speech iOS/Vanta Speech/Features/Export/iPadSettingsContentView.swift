@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 
 /// iPad-оптимизированный view для секции Настройки
 /// Список настроек слева, детали справа
@@ -14,6 +15,13 @@ struct iPadSettingsContentView: View {
     @StateObject private var authManager = AuthenticationManager.shared
     @StateObject private var calendarManager = EASCalendarManager.shared
     @StateObject private var confluenceManager = ConfluenceManager.shared
+    
+    // SwiftData context
+    @Environment(\.modelContext) private var modelContext
+    
+    // Alert states
+    @State private var showLogoutConfirmation = false
+    @State private var showDeleteAllConfirmation = false
 
     enum SettingItem: String, CaseIterable, Identifiable {
         case account = "Аккаунт"
@@ -62,6 +70,22 @@ struct iPadSettingsContentView: View {
             }
         }
         .background(Color(.systemGroupedBackground))
+        .alert("Подтверждение выхода", isPresented: $showLogoutConfirmation) {
+            Button("Отмена", role: .cancel) { }
+            Button("Выйти", role: .destructive) {
+                authManager.logout(modelContext: modelContext)
+            }
+        } message: {
+            Text("При выходе из аккаунта все записи будут удалены, а подключения к Exchange и Confluence будут разорваны. Это действие нельзя отменить.")
+        }
+        .alert("Удалить все записи?", isPresented: $showDeleteAllConfirmation) {
+            Button("Отмена", role: .cancel) { }
+            Button("Удалить", role: .destructive) {
+                deleteAllRecordings()
+            }
+        } message: {
+            Text("Все записи будут безвозвратно удалены. Это действие нельзя отменить.")
+        }
     }
 
     // MARK: - Settings List
@@ -156,9 +180,20 @@ struct iPadSettingsContentView: View {
             }
 
             Button("Выйти из аккаунта", role: .destructive) {
-                authManager.logout()
+                showLogoutConfirmation = true
             }
             .buttonStyle(.bordered)
+            .disabled(authManager.isLoggingOut)
+            
+            if authManager.isLoggingOut {
+                HStack {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Выход...")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
 
             Spacer()
         }
@@ -415,7 +450,7 @@ struct iPadSettingsContentView: View {
                 .foregroundStyle(.red)
 
             Button("Удалить все записи", role: .destructive) {
-                // TODO: Implement clear all
+                showDeleteAllConfirmation = true
             }
             .buttonStyle(.bordered)
 
@@ -429,6 +464,12 @@ struct iPadSettingsContentView: View {
         Text(title)
             .font(.largeTitle)
             .fontWeight(.bold)
+    }
+    
+    private func deleteAllRecordings() {
+        Task {
+            await AppResetService.shared.performFullReset(modelContext: modelContext)
+        }
     }
 }
 

@@ -12,6 +12,11 @@ final class KeychainManager {
     private let easDeviceIdKey = "eas_device_id"
     private let easSyncStateKey = "eas_sync_state"
     private let easCachedEventsKey = "eas_cached_events"
+    
+    // MARK: - Confluence Credentials Storage
+    private let confluenceUsernameKey = "confluence_username"
+    private let confluencePasswordKey = "confluence_password"
+    
     private let fileManager = FileManager.default
 
     private init() {}
@@ -215,6 +220,40 @@ final class KeychainManager {
         let deviceId: String
     }
 
+    // MARK: - Confluence Credentials
+    
+    /// Save Confluence credentials
+    func saveConfluenceCredentials(username: String, password: String) throws {
+        guard let usernameData = username.data(using: .utf8),
+              let passwordData = password.data(using: .utf8) else {
+            throw KeychainError.encodingFailed
+        }
+        try save(data: usernameData, forKey: confluenceUsernameKey)
+        try save(data: passwordData, forKey: confluencePasswordKey)
+    }
+    
+    /// Load Confluence credentials
+    func loadConfluenceCredentials() -> (username: String, password: String)? {
+        guard let usernameData = load(forKey: confluenceUsernameKey),
+              let passwordData = load(forKey: confluencePasswordKey),
+              let username = String(data: usernameData, encoding: .utf8),
+              let password = String(data: passwordData, encoding: .utf8) else {
+            return nil
+        }
+        return (username, password)
+    }
+    
+    /// Delete Confluence credentials
+    func deleteConfluenceCredentials() {
+        delete(forKey: confluenceUsernameKey)
+        delete(forKey: confluencePasswordKey)
+    }
+    
+    /// Check if Confluence credentials exist
+    var hasConfluenceCredentials: Bool {
+        loadConfluenceCredentials() != nil
+    }
+    
     // MARK: - Generic Keychain Operations
 
     private func save(data: Data, forKey key: String) throws {

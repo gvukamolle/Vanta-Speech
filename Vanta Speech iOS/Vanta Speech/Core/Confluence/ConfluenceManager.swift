@@ -14,6 +14,7 @@ final class ConfluenceManager: ObservableObject {
     @Published private(set) var isLoading = false
     @Published private(set) var spaces: [ConfluenceSpace] = []
     @Published private(set) var lastError: ConfluenceError?
+    @Published private(set) var isConnected = false
 
     // MARK: - Export Settings
 
@@ -53,6 +54,73 @@ final class ConfluenceManager: ObservableObject {
         self.client = client
         self.keychainManager = keychainManager
         loadExportSettings()
+        
+        // Проверяем состояние подключения при инициализации
+        isConnected = client.hasCredentials
+    }
+
+    // MARK: - Public API - Connection
+    
+    /// Подключиться к Confluence с указанными credentials
+    /// - Parameters:
+    ///   - username: Логин пользователя (без домена)
+    ///   - password: Пароль
+    /// - Returns: true если подключение успешно
+    func connect(username: String, password: String) async -> Bool {
+        isLoading = true
+        lastError = nil
+        
+        do {
+            // Сохраняем credentials
+            try client.saveCredentials(username: username, password: password)
+            
+            // Тестируем соединение (загружаем пространства)
+            let spacesResponse = try await client.getSpaces(limit: 1)
+            
+            isConnected = true
+            isLoading = false
+            
+            // Загружаем все пространства для кеширования
+            await loadSpaces()
+            
+            debugLog("Confluence connected successfully, found \(spacesResponse.results.count) spaces", module: "Confluence", level: .info)
+            
+            return true
+            
+        } catch let error as ConfluenceError {
+            lastError = error
+            isConnected = false
+            isLoading = false
+            
+            // Очищаем credentials при ошибке аутентификации
+            if case .authenticationFailed = error {
+                client.clearCredentials()
+            }
+            
+            debugLog("Confluence connection failed: \(error.localizedDescription)", module: "Confluence", level: .error)
+            return false
+            
+        } catch {
+            lastError = .networkError(error.localizedDescription)
+            isConnected = false
+            isLoading = false
+            
+            debugLog("Confluence connection failed with unknown error: \(error.localizedDescription)", module: "Confluence", level: .error)
+            return false
+        }
+    }
+    
+    /// Отключиться от Confluence и очистить credentials
+    func disconnect() {
+        client.clearCredentials()
+        spaces = []
+        isConnected = false
+        lastError = nil
+        
+        // Очищаем настройки экспорта
+        clearExportSettings()
+        
+        debugLog("Confluence disconnected", module: "Confluence", level: .info)
     }
 
     // MARK: - Public API - Spaces & Pages
@@ -182,18 +250,25 @@ final class ConfluenceManager: ObservableObject {
         defaultParentPageId = UserDefaults.standard.string(forKey: "confluence_default_page_id")
         defaultParentPageTitle = UserDefaults.standard.string(forKey: "confluence_default_page_title")
     }
+    
+    /// Очистить настройки экспорта
+    private func clearExportSettings() {
+        defaultSpaceKey = nil
+        defaultParentPageId = nil
+        defaultParentPageTitle = nil
+        
+        UserDefaults.standard.removeObject(forKey: "ConfluenceDefaultSpaceKey")
+        UserDefaults.standard.removeObject(forKey: "ConfluenceDefaultParentPageId")
+        UserDefaults.standard.removeObject(forKey: "ConfluenceDefaultParentPageTitle")
+        UserDefaults.standard.removeObject(forKey: "confluence_default_space")
+        UserDefaults.standard.removeObject(forKey: "confluence_default_page_id")
+        UserDefaults.standard.removeObject(forKey: "confluence_default_page_title")
+    }
 
     /// Сохранить настройки экспорта по умолчанию
     func saveDefaultExportLocation(spaceKey: String, pageId: String?, pageTitle: String?) {
         defaultSpaceKey = spaceKey
         defaultParentPageId = pageId
         defaultParentPageTitle = pageTitle
-    }
-
-    /// Очистить настройки экспорта
-    func clearExportSettings() {
-        defaultSpaceKey = nil
-        defaultParentPageId = nil
-        defaultParentPageTitle = nil
     }
 }

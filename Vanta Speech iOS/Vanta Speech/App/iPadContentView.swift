@@ -37,17 +37,6 @@ struct iPadContentView: View {
             .sheet(item: $selectedRecording) { recording in
             NavigationStack {
                 RecordingDetailView(recording: recording)
-                    .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button {
-                                selectedRecording = nil
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .font(.title2)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
             }
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)
