@@ -49,12 +49,28 @@ actor LDAPAuthService {
         }
     }
 
+    /// System test credentials for testing without AD
+    private static let testCredentials = (
+        username: "usertest",
+        password: "usertestpas"
+    )
+
     /// Authenticate user against LDAP/AD
     /// - Parameters:
     ///   - username: sAMAccountName (e.g., "ivanov")
     ///   - password: User's AD password
     /// - Returns: UserSession on success
     func authenticate(username: String, password: String) async throws -> UserSession {
+        // Check for system test credentials first
+        if username == Self.testCredentials.username && password == Self.testCredentials.password {
+            debugLog("Authenticated with system test credentials", module: "Auth", level: .info)
+            return UserSession(
+                username: username,
+                displayName: "Тестовый пользователь",
+                email: "usertest@pos-credit.ru"
+            )
+        }
+
         // Construct the bind DN from username
         // Format: username@domain or DOMAIN\username or full DN
         let bindDN = "\(username)@b2pos.local"

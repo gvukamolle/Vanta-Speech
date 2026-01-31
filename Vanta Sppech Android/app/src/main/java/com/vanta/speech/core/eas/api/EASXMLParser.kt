@@ -87,9 +87,12 @@ class EASXMLParser {
 
         var currentEvent: EventBuilder? = null
         var currentAttendee: AttendeeBuilder? = null
+        var currentException: ExceptionBuilder? = null
         var inAdd = false
         var inAttendee = false
         var inBody = false
+        var inExceptions = false
+        var inException = false
         var currentTag = ""
 
         while (parser.eventType != XmlPullParser.END_DOCUMENT) {
@@ -106,6 +109,13 @@ class EASXMLParser {
                             inAttendee = true
                         }
                         "Body" -> inBody = true
+                        "Exceptions" -> inExceptions = true
+                        "Exception" -> {
+                            if (inExceptions) {
+                                currentException = ExceptionBuilder()
+                                inException = true
+                            }
+                        }
                         "MoreAvailable" -> moreAvailable = true
                     }
                 }
@@ -137,6 +147,17 @@ class EASXMLParser {
                                 "AttendeeStatus" -> currentAttendee.status = text.toIntOrNull()
                             }
                         }
+
+                        if (inException && currentException != null) {
+                            when (currentTag) {
+                                "ExceptionStartTime" -> currentException.originalStartTime = parseDate(text)
+                                "StartTime" -> currentException.startTime = parseDate(text)
+                                "EndTime" -> currentException.endTime = parseDate(text)
+                                "Subject" -> currentException.subject = text
+                                "Location" -> currentException.location = text
+                                "Deleted" -> currentException.isDeleted = text == "1"
+                            }
+                        }
                     }
                 }
                 XmlPullParser.END_TAG -> {
@@ -151,6 +172,12 @@ class EASXMLParser {
                             currentAttendee = null
                             inAttendee = false
                         }
+                        "Exception" -> {
+                            currentException?.build()?.let { currentEvent?.exceptions?.add(it) }
+                            currentException = null
+                            inException = false
+                        }
+                        "Exceptions" -> inExceptions = false
                         "Body" -> inBody = false
                     }
                     currentTag = ""
@@ -204,6 +231,7 @@ class EASXMLParser {
         var body: String? = null
         var isAllDay = false
         var attendees = mutableListOf<EASAttendee>()
+        var exceptions = mutableListOf<EASException>()
 
         fun build(): EASCalendarEvent? {
             val start = startTime ?: return null
@@ -219,7 +247,29 @@ class EASXMLParser {
                 body = body,
                 organizer = null,
                 attendees = attendees.toList(),
-                isAllDay = isAllDay
+                isAllDay = isAllDay,
+                exceptions = exceptions.toList().ifEmpty { null }
+            )
+        }
+    }
+
+    private class ExceptionBuilder {
+        var originalStartTime: Date? = null
+        var startTime: Date? = null
+        var endTime: Date? = null
+        var subject: String? = null
+        var location: String? = null
+        var isDeleted = false
+
+        fun build(): EASException? {
+            val originalStart = originalStartTime ?: return null
+            return EASException(
+                originalStartTimeMillis = originalStart.time,
+                startTimeMillis = if (isDeleted) null else startTime?.time,
+                endTimeMillis = if (isDeleted) null else endTime?.time,
+                subject = subject,
+                location = location,
+                isDeleted = isDeleted
             )
         }
     }

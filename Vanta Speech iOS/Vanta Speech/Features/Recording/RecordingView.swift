@@ -8,6 +8,7 @@ struct RecordingView: View {
     @EnvironmentObject var coordinator: RecordingCoordinator
 
     @StateObject private var viewModel = RecordingViewModel()
+    @State private var showMeetingLinkSecondLevel = false
 
     /// Текущий режим записи
     private var isRealtimeMode: Bool {
@@ -145,6 +146,7 @@ struct RecordingView: View {
             }
             .meetingLinkingAlert(
                 isPresented: $viewModel.showMeetingLinkWarning,
+                showSecondLevel: $showMeetingLinkSecondLevel,
                 for: viewModel.realtimeRecording ?? Recording(title: "", audioFileURL: ""),
                 onSend: {
                     viewModel.proceedWithRealtimeSummary()

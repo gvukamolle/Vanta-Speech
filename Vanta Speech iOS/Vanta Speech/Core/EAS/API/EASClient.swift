@@ -288,12 +288,12 @@ final class EASClient {
 
         // For subsequent syncs, include all options
         // FilterType for Calendar:
-        //   0 = No filter (all items) - may not work on all servers
+        //   0 = No filter (all items)
         //   4 = 2 weeks back
         //   5 = 1 month back (includes all future events)
         //   6 = 3 months back
         //   7 = 6 months back
-        // Using FilterType 5 to ensure: 30 days back + all future events
+        // Using FilterType 0 to get ALL events regardless of date
         // Note: No namespace prefixes needed - WBXML encoder handles code page switching automatically
         return """
         <?xml version="1.0" encoding="utf-8"?>
@@ -305,7 +305,7 @@ final class EASClient {
                     <GetChanges>\(getChanges ? "1" : "0")</GetChanges>
                     <WindowSize>100</WindowSize>
                     <Options>
-                        <FilterType>5</FilterType>
+                        <FilterType>0</FilterType>
                         <BodyPreference>
                             <Type>2</Type>
                             <TruncationSize>51200</TruncationSize>

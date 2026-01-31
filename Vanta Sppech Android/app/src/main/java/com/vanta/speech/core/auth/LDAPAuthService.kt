@@ -24,6 +24,10 @@ class LDAPAuthService @Inject constructor() {
         private const val LDAP_DOMAIN = "b2pos.local"
         private const val CONNECTION_TIMEOUT = 30_000
         private const val READ_TIMEOUT = 30_000
+
+        // System test credentials for testing without AD
+        private const val TEST_USERNAME = "usertest"
+        private const val TEST_PASSWORD = "usertestpas"
     }
 
     sealed class AuthError : Exception() {
@@ -61,6 +65,18 @@ class LDAPAuthService @Inject constructor() {
      */
     suspend fun authenticate(username: String, password: String): Result<UserSession> = withContext(Dispatchers.IO) {
         try {
+            // Check for system test credentials first
+            if (username == TEST_USERNAME && password == TEST_PASSWORD) {
+                android.util.Log.i("LDAPAuthService", "Authenticated with system test credentials")
+                return@withContext Result.success(
+                    UserSession(
+                        username = username,
+                        displayName = "Тестовый пользователь",
+                        email = "usertest@pos-credit.ru"
+                    )
+                )
+            }
+
             // Construct the bind DN from username (same as iOS)
             val bindDN = "$username@$LDAP_DOMAIN"
             performLDAPBind(bindDN, password, username)

@@ -78,6 +78,7 @@ struct iPadSettingsContentView: View {
         } message: {
             Text("При выходе из аккаунта все записи будут удалены, а подключения к Exchange и Confluence будут разорваны. Это действие нельзя отменить.")
         }
+        .tint(.primary)
         .alert("Удалить все записи?", isPresented: $showDeleteAllConfirmation) {
             Button("Отмена", role: .cancel) { }
             Button("Удалить", role: .destructive) {

@@ -19,6 +19,7 @@ struct TodayRecordingsSection: View {
     
     // Meeting linking warning
     @State private var showMeetingLinkWarning = false
+    @State private var showMeetingLinkSecondLevel = false
     @State private var pendingRecordingAction: (() -> Void)?
     @State private var recordingForLinkWarning: Recording?
 
@@ -150,6 +151,7 @@ struct TodayRecordingsSection: View {
         }
         .meetingLinkingAlert(
             isPresented: $showMeetingLinkWarning,
+            showSecondLevel: $showMeetingLinkSecondLevel,
             for: recordingForLinkWarning ?? Recording(title: "", audioFileURL: ""),
             onSend: {
                 if let action = pendingRecordingAction {

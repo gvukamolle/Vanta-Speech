@@ -156,8 +156,7 @@ final class EASCalendarManager: ObservableObject {
         isSyncing = false
     }
 
-    /// Internal sync implementation - called by both syncEvents() and forceFullSync()
-    /// IMPORTANT: Caller must set isSyncing = true before calling and = false after
+    /// Internal sync implementation
     private func performSyncInternal() async {
         lastError = nil
 
@@ -175,7 +174,7 @@ final class EASCalendarManager: ObservableObject {
             var continueSync = true
 
             while continueSync {
-                continueSync = false  // Default to stopping after this iteration
+                continueSync = false
 
                 // Check if this is initial sync (SyncKey = "0")
                 let isInitialSync = syncState.calendarSyncKey == "0"
@@ -186,7 +185,7 @@ final class EASCalendarManager: ObservableObject {
                 var response = try await client.sync(
                     folderId: folderId,
                     syncKey: syncState.calendarSyncKey,
-                    getChanges: !isInitialSync, // Don't request changes on initial sync
+                    getChanges: !isInitialSync,
                     policyKey: syncState.policyKey ?? "0"
                 )
 
@@ -251,7 +250,6 @@ final class EASCalendarManager: ObservableObject {
     }
 
     /// Internal full sync implementation - replaces cache instead of merging
-    /// Used by forceFullSync() to avoid triggering @Published during sync
     private func performFullSyncInternal() async {
         lastError = nil
         var allEvents: [EASCalendarEvent] = []
@@ -270,27 +268,24 @@ final class EASCalendarManager: ObservableObject {
             var continueSync = true
 
             while continueSync {
-                continueSync = false  // Default to stopping after this iteration
+                continueSync = false
 
-                // Check if this is initial sync (SyncKey = "0")
                 let isInitialSync = syncState.calendarSyncKey == "0"
 
                 debugLog("Starting sync iteration: syncKey=\(syncState.calendarSyncKey), isInitial=\(isInitialSync)", module: "EAS", level: .info)
 
-                // Perform sync
                 var response = try await client.sync(
                     folderId: folderId,
                     syncKey: syncState.calendarSyncKey,
-                    getChanges: !isInitialSync, // Don't request changes on initial sync
+                    getChanges: !isInitialSync,
                     policyKey: syncState.policyKey ?? "0"
                 )
 
-                // Handle provisioning required (status 142/144)
+                // Handle provisioning required
                 if response.status == 142 || response.status == 144 {
                     debugLog("Sync requires provisioning, status: \(response.status)", module: "EAS", level: .info)
                     try await performProvisioning()
 
-                    // Retry sync with new policy key
                     response = try await client.sync(
                         folderId: folderId,
                         syncKey: syncState.calendarSyncKey,
@@ -299,26 +294,22 @@ final class EASCalendarManager: ObservableObject {
                     )
                 }
 
-                // Check for errors (status 1 = success)
                 if response.status != 1 {
                     debugLog("Sync failed with status: \(response.status)", module: "EAS", level: .error)
                     throw EASError.serverError(statusCode: response.status, message: "Sync status: \(response.status)")
                 }
 
-                // Update sync key
                 syncState.calendarSyncKey = response.syncKey
                 try? keychainManager.saveEASSyncState(syncState)
 
-                // If this was initial sync, continue to get actual events
                 if isInitialSync {
-                    debugLog("Initial sync complete, SyncKey: \(response.syncKey). Continuing to fetch events...", module: "EAS", level: .info)
+                    debugLog("Initial sync complete, SyncKey: \(response.syncKey). Continuing...", module: "EAS", level: .info)
                     continueSync = true
                     continue
                 }
 
-                // Accumulate events (instead of merging)
                 if !response.events.isEmpty {
-                    debugLog("Received \(response.events.count) events in this batch", module: "EAS", level: .info)
+                    debugLog("Received \(response.events.count) events", module: "EAS", level: .info)
                     allEvents.append(contentsOf: response.events)
                 }
 
@@ -326,50 +317,21 @@ final class EASCalendarManager: ObservableObject {
                 try? keychainManager.saveEASSyncState(syncState)
                 lastSyncDate = syncState.lastSyncDate
 
-                // Handle more available
                 if response.moreAvailable {
-                    debugLog("More events available, continuing sync...", module: "EAS", level: .info)
+                    debugLog("More events available...", module: "EAS", level: .info)
                     continueSync = true
                 }
             }
 
-            // After all iterations complete - replace cache with new events (single @Published trigger)
-            // No client-side filtering - show everything server returns
-            let calendar = Calendar.current
-            let now = Date()
-            // Wide range for recurring events expansion only
-            let rangeStart = calendar.date(byAdding: .month, value: -3, to: now) ?? now
-            let rangeEnd = calendar.date(byAdding: .month, value: 3, to: now) ?? now
+            // Process events with new logic: merge masters by UID, extrapolate series
+            let processedEvents = processEvents(allEvents)
 
-            // Process events: expand recurring events, no date filtering
-            var processedEvents: [EASCalendarEvent] = []
-
-            for event in allEvents {
-                // Skip cancelled events
-                if event.isCancelled {
-                    continue
-                }
-
-                if event.isRecurring {
-                    // Expand recurring event into occurrences
-                    let occurrences = event.expandOccurrences(from: rangeStart, to: rangeEnd)
-                    debugLog("Expanded recurring event '\(event.subject)' into \(occurrences.count) occurrences", module: "EAS", level: .info)
-                    processedEvents.append(contentsOf: occurrences)
-                } else {
-                    // Add single events without filtering
-                    processedEvents.append(event)
-                }
-            }
-
-            // Sort by start time
-            processedEvents.sort { $0.startTime < $1.startTime }
-
-            debugLog("Full sync complete. Replacing cache with \(processedEvents.count) events (from \(allEvents.count) raw)", module: "EAS", level: .info)
+            debugLog("Full sync complete. Total: \(processedEvents.count) events (from \(allEvents.count) raw)", module: "EAS", level: .info)
             cachedEvents = processedEvents
             try? keychainManager.saveEASCachedEvents(cachedEvents)
 
         } catch let error as EASError {
-            debugLog("Full sync failed with EASError: \(error)", module: "EAS", level: .error)
+            debugLog("Full sync failed: \(error)", module: "EAS", level: .error)
             lastError = error
             if error.shouldClearCredentials {
                 disconnect()
@@ -377,7 +339,7 @@ final class EASCalendarManager: ObservableObject {
         } catch is CancellationError {
             debugLog("Full sync was cancelled", module: "EAS", level: .warning)
         } catch {
-            debugLog("Full sync failed with error: \(error.localizedDescription)", module: "EAS", level: .error)
+            debugLog("Full sync failed: \(error.localizedDescription)", module: "EAS", level: .error)
             lastError = .unknown(error.localizedDescription)
         }
     }
@@ -405,7 +367,6 @@ final class EASCalendarManager: ObservableObject {
             policyKey: syncState.policyKey ?? "0"
         )
 
-        // Update sync key
         syncState.calendarSyncKey = response.syncKey
         try? keychainManager.saveEASSyncState(syncState)
 
@@ -427,7 +388,6 @@ final class EASCalendarManager: ObservableObject {
     // MARK: - Private Methods
 
     private func discoverCalendarFolder() async throws {
-        // Try FolderSync, handle provisioning if required
         let policyKey = syncState.policyKey ?? "0"
         var response = try await client.folderSync(syncKey: syncState.folderSyncKey, policyKey: policyKey)
 
@@ -436,29 +396,24 @@ final class EASCalendarManager: ObservableObject {
             debugLog("Provisioning required, status: \(response.status)", module: "EAS", level: .info)
             try await performProvisioning()
 
-            // Retry FolderSync with new policy key
             let newPolicyKey = syncState.policyKey ?? "0"
             response = try await client.folderSync(syncKey: syncState.folderSyncKey, policyKey: newPolicyKey)
         }
 
-        // Check for other errors (status 1 = success)
         if response.status != 1 {
             debugLog("FolderSync failed with status: \(response.status)", module: "EAS", level: .error)
             throw EASError.serverError(statusCode: response.status, message: "FolderSync status: \(response.status)")
         }
 
-        // Update folder sync key
         syncState.folderSyncKey = response.syncKey
 
-        // Find calendar folder
         guard let calendarFolder = response.calendarFolder else {
             throw EASError.calendarFolderNotFound
         }
 
         syncState.calendarFolderId = calendarFolder.serverId
-        syncState.calendarSyncKey = "0" // Reset calendar sync key for new folder
+        syncState.calendarSyncKey = "0"
 
-        // Save state
         try? keychainManager.saveEASSyncState(syncState)
     }
 
@@ -486,51 +441,388 @@ final class EASCalendarManager: ObservableObject {
         // Remove deleted events
         for deletedId in deletedIds {
             eventMap.removeValue(forKey: deletedId)
-            // Also remove occurrences for recurring events (id format: "baseId_occurrenceId")
-            let keysToRemove = eventMap.keys.filter { $0.hasPrefix("\(deletedId)_") }
-            for key in keysToRemove {
-                eventMap.removeValue(forKey: key)
-            }
             debugLog("Removed deleted event: \(deletedId)", module: "EAS", level: .info)
         }
 
-        let calendar = Calendar.current
-        let now = Date()
-
-        // Wide range for recurring events expansion only (no filtering)
-        let rangeStart = calendar.date(byAdding: .month, value: -3, to: now) ?? now
-        let rangeEnd = calendar.date(byAdding: .month, value: 3, to: now) ?? now
-
+        // Add or update events
         for event in newEvents {
-            // Skip cancelled events
             if event.isCancelled {
-                // Remove from cache if it was previously there
                 eventMap.removeValue(forKey: event.id)
-                let keysToRemove = eventMap.keys.filter { $0.hasPrefix("\(event.id)_") }
-                for key in keysToRemove {
-                    eventMap.removeValue(forKey: key)
-                }
-                continue
-            }
-
-            if event.isRecurring {
-                // Expand recurring event into occurrences
-                let occurrences = event.expandOccurrences(from: rangeStart, to: rangeEnd)
-                debugLog("Expanded recurring event '\(event.subject)' into \(occurrences.count) occurrences", module: "EAS", level: .info)
-                for occurrence in occurrences {
-                    eventMap[occurrence.id] = occurrence
-                }
             } else {
                 eventMap[event.id] = event
             }
         }
 
-        // No filtering - keep all events
         cachedEvents = eventMap.values.sorted { $0.startTime < $1.startTime }
-
-        // Persist cached events to Keychain
         try? keychainManager.saveEASCachedEvents(cachedEvents)
-        debugLog("Saved \(cachedEvents.count) events to Keychain cache", module: "EAS", level: .info)
+        debugLog("Saved \(cachedEvents.count) events to cache", module: "EAS", level: .info)
+    }
+
+    /// Process events: group masters by (Subject + BaseTime + Recurrence), extrapolate series
+    private func processEvents(_ events: [EASCalendarEvent]) -> [EASCalendarEvent] {
+        let calendar = Calendar.current
+        let now = Date()
+        let rangeStart = calendar.date(byAdding: .month, value: -3, to: now) ?? now
+        let rangeEnd = calendar.date(byAdding: .month, value: 3, to: now) ?? now
+
+        // Separate recurring masters, exceptions, and single events
+        var allMasters: [EASCalendarEvent] = []
+        var orphanExceptions: [EASCalendarEvent] = []
+        var singleEvents: [EASCalendarEvent] = []
+
+        for event in events {
+            if event.isCancelled { continue }
+            
+            if event.isRecurring && !event.isException {
+                allMasters.append(event)
+            } else if event.isException {
+                orphanExceptions.append(event)
+            } else {
+                singleEvents.append(event)
+            }
+        }
+
+        var processedEvents: [EASCalendarEvent] = []
+        
+        // Add single events as-is
+        processedEvents.append(contentsOf: singleEvents)
+        
+        // Process orphan exceptions as standalone
+        processedEvents.append(contentsOf: orphanExceptions)
+
+        // Group masters by series key (Subject + BaseTime + Recurrence)
+        var mastersBySeries: [String: [EASCalendarEvent]] = [:]
+        
+        for master in allMasters {
+            let seriesKey = makeSeriesKey(for: master)
+            mastersBySeries[seriesKey, default: []].append(master)
+        }
+        
+        // Process each series group
+        for (seriesKey, masters) in mastersBySeries {
+            guard let firstMaster = masters.first else { continue }
+            
+            debugLog("Processing series '\(firstMaster.subject)' with \(masters.count) master(s), key: \(seriesKey)", module: "EAS", level: .info)
+            
+            // Collect all exceptions from all masters in this series
+            var allExceptions: [EASException] = []
+            for master in masters {
+                if let exceptions = master.exceptions {
+                    allExceptions.append(contentsOf: exceptions)
+                }
+            }
+            
+            debugLog("  Masters: \(masters.map { "\($0.id)@\(dateToString($0.startTime))" }.joined(separator: ", "))", module: "EAS", level: .info)
+            debugLog("  Exceptions: \(allExceptions.count) total", module: "EAS", level: .info)
+            
+            guard let recurrence = firstMaster.recurrence else {
+                processedEvents.append(contentsOf: masters)
+                continue
+            }
+            
+            // Determine base time (most common time from exceptions)
+            let baseTime = determineBaseTime(from: allExceptions, masters: masters)
+            let calendar = Calendar.current
+            let baseHour = calendar.component(.hour, from: baseTime)
+            let baseMinute = calendar.component(.minute, from: baseTime)
+            debugLog("  Base time: \(baseHour):\(baseMinute) (from \(allExceptions.count) exceptions)", module: "EAS", level: .info)
+            
+            // Find time range for this series (from exceptions and masters)
+            let exceptionDates = allExceptions.map(\.originalStartTime)
+            let masterStartDates = masters.map(\.startTime)
+            
+            // Series start: earliest of exception dates OR earliest master start date
+            let seriesStart: Date
+            if let minException = exceptionDates.min(), let minMaster = masterStartDates.min() {
+                seriesStart = min(minException, minMaster)
+            } else if let minException = exceptionDates.min() {
+                seriesStart = minException
+            } else if let minMaster = masterStartDates.min() {
+                seriesStart = minMaster
+            } else {
+                seriesStart = firstMaster.startTime
+            }
+            
+            // Series end: latest of exception dates OR sync range end
+            let seriesEnd: Date
+            if let maxException = exceptionDates.max() {
+                seriesEnd = max(rangeEnd, maxException)
+            } else {
+                seriesEnd = rangeEnd
+            }
+            
+            debugLog("  Series range: \(dateToString(seriesStart)) to \(dateToString(seriesEnd))", module: "EAS", level: .info)
+            
+            // Use the master with most exceptions as template
+            let bestMaster = masters.sorted { 
+                ($0.exceptions?.count ?? 0) > ($1.exceptions?.count ?? 0)
+            }.first ?? firstMaster
+            
+            let duration = bestMaster.endTime.timeIntervalSince(bestMaster.startTime)
+            
+            // Create virtual master for this series
+            // Use recurrence WITHOUT until date, since we're managing the range manually
+            let virtualRecurrence = EASRecurrence(
+                type: recurrence.type,
+                interval: recurrence.interval,
+                dayOfWeek: recurrence.dayOfWeek,
+                dayOfMonth: recurrence.dayOfMonth,
+                until: nil  // Don't limit by master's until date
+            )
+            
+            let virtualMaster = EASCalendarEvent(
+                id: bestMaster.id,
+                uid: bestMaster.uid,
+                subject: bestMaster.subject,
+                startTime: seriesStart,
+                endTime: seriesStart.addingTimeInterval(duration),
+                location: bestMaster.location,
+                body: bestMaster.body,
+                organizer: bestMaster.organizer,
+                attendees: bestMaster.attendees,
+                isAllDay: bestMaster.isAllDay,
+                recurrence: virtualRecurrence,
+                meetingStatus: bestMaster.meetingStatus,
+                exceptions: allExceptions.isEmpty ? nil : allExceptions,
+                clientId: bestMaster.clientId,
+                isException: false,
+                originalStartTime: nil
+            )
+            
+            // Expand only within series time range (limited by global range)
+            let expandStart = max(rangeStart, seriesStart)
+            let expandEnd = min(rangeEnd, seriesEnd)
+            
+            let occurrences = expandOccurrences(
+                for: virtualMaster,
+                from: expandStart,
+                to: expandEnd,
+                baseTime: baseTime,
+                duration: duration
+            )
+            
+            debugLog("Expanded '\(virtualMaster.subject)' into \(occurrences.count) occurrences (Series: \(seriesKey))", module: "EAS", level: .info)
+            processedEvents.append(contentsOf: occurrences)
+        }
+
+        // Sort by start time
+        return processedEvents.sorted { $0.startTime < $1.startTime }
+    }
+    
+    /// Create a series key from master for grouping
+    private func makeSeriesKey(for master: EASCalendarEvent) -> String {
+        guard let recurrence = master.recurrence else {
+            return master.id  // Non-recurring events are their own series
+        }
+        
+        // Get base time from master's exceptions
+        let baseTime: String
+        if let exceptions = master.exceptions, !exceptions.isEmpty {
+            let calendar = Calendar.current
+            var timeComponents: [(hour: Int, minute: Int)] = []
+            for ex in exceptions where !ex.isDeleted {
+                let hour = calendar.component(.hour, from: ex.originalStartTime)
+                let minute = calendar.component(.minute, from: ex.originalStartTime)
+                timeComponents.append((hour, minute))
+            }
+            let grouped = Dictionary(grouping: timeComponents) { "\($0.hour):\($0.minute)" }
+            if let mostCommon = grouped.max(by: { $0.value.count < $1.value.count })?.key {
+                baseTime = mostCommon
+            } else {
+                baseTime = "\(calendar.component(.hour, from: master.startTime)):\(calendar.component(.minute, from: master.startTime))"
+            }
+        } else {
+            let calendar = Calendar.current
+            baseTime = "\(calendar.component(.hour, from: master.startTime)):\(calendar.component(.minute, from: master.startTime))"
+        }
+        
+        // Recurrence signature
+        let dayOfWeek = recurrence.dayOfWeek ?? 0
+        let recSignature = "\(recurrence.type.rawValue)_\(recurrence.interval)_\(dayOfWeek)"
+        
+        return "\(master.subject)|\(baseTime)|\(recSignature)"
+    }
+    
+    /// Determine the most common time from exceptions
+    private func determineBaseTime(from exceptions: [EASException], masters: [EASCalendarEvent]) -> Date {
+        let calendar = Calendar.current
+        
+        // Collect time components from non-deleted exceptions
+        var timeComponents: [(hour: Int, minute: Int)] = []
+        
+        for exception in exceptions {
+            if !exception.isDeleted {
+                let hour = calendar.component(.hour, from: exception.originalStartTime)
+                let minute = calendar.component(.minute, from: exception.originalStartTime)
+                timeComponents.append((hour, minute))
+            }
+        }
+        
+        // Find most common time (convert to string for Hashable)
+        let grouped = Dictionary(grouping: timeComponents) { "\($0.hour):\($0.minute)" }
+        if let mostCommonKey = grouped.max(by: { $0.value.count < $1.value.count })?.key {
+            let parts = mostCommonKey.split(separator: ":")
+            if parts.count == 2, let hour = Int(parts[0]), let minute = Int(parts[1]) {
+                // Create a date with this time
+                var components = calendar.dateComponents([.year, .month, .day], from: Date())
+                components.hour = hour
+                components.minute = minute
+                return calendar.date(from: components) ?? Date()
+            }
+        }
+        
+        // Fallback to first master's start time
+        return masters.first?.startTime ?? Date()
+    }
+    
+    /// Expand occurrences for a master using base time
+    private func expandOccurrences(
+        for master: EASCalendarEvent,
+        from rangeStart: Date,
+        to rangeEnd: Date,
+        baseTime: Date,
+        duration: TimeInterval,
+        maxOccurrences: Int = 200
+    ) -> [EASCalendarEvent] {
+        guard let recurrence = master.recurrence else {
+            return [master]
+        }
+
+        var occurrences: [EASCalendarEvent] = []
+        let calendar = Calendar.current
+        
+        // Get base time components
+        let baseHour = calendar.component(.hour, from: baseTime)
+        let baseMinute = calendar.component(.minute, from: baseTime)
+
+        // Build exception map by original start time day
+        let exceptionMap = master.exceptions?.reduce(into: [Date: EASException]()) { map, ex in
+            let key = calendar.startOfDay(for: ex.originalStartTime)
+            map[key] = ex
+        } ?? [:]
+
+        // Start from rangeStart
+        var currentDate = rangeStart
+        var occurrenceIndex = 0
+
+        while currentDate <= rangeEnd && occurrenceIndex < maxOccurrences {
+            // Check recurrence end date
+            if let until = recurrence.until, currentDate > until {
+                break
+            }
+
+            // Check if this date matches recurrence pattern
+            let shouldInclude: Bool
+            switch recurrence.type {
+            case .weekly:
+                let weekday = calendar.component(.weekday, from: currentDate)
+                shouldInclude = recurrence.includesWeekday(weekday)
+            case .daily:
+                shouldInclude = true
+            case .monthly:
+                if let dayOfMonth = recurrence.dayOfMonth {
+                    shouldInclude = calendar.component(.day, from: currentDate) == dayOfMonth
+                } else {
+                    shouldInclude = true
+                }
+            default:
+                shouldInclude = true
+            }
+
+            if shouldInclude {
+                let occurrenceDay = calendar.startOfDay(for: currentDate)
+                
+                if let exception = exceptionMap[occurrenceDay] {
+                    if !exception.isDeleted {
+                        // Modified occurrence - use exception's data if available, otherwise use base time
+                        let occurrenceStart = exception.startTime ?? calendar.date(
+                            bySettingHour: baseHour,
+                            minute: baseMinute,
+                            second: 0,
+                            of: occurrenceDay
+                        )!
+                        let occurrenceEnd = exception.endTime ?? occurrenceStart.addingTimeInterval(duration)
+                        
+                        let occurrence = EASCalendarEvent(
+                            id: "\(master.id)_exception_\(occurrenceIndex)",
+                            uid: master.uid,
+                            subject: exception.subject ?? master.subject,
+                            startTime: occurrenceStart,
+                            endTime: occurrenceEnd,
+                            location: exception.location ?? master.location,
+                            body: master.body,
+                            organizer: master.organizer,
+                            attendees: master.attendees,
+                            isAllDay: master.isAllDay,
+                            recurrence: nil,
+                            meetingStatus: master.meetingStatus,
+                            exceptions: nil,
+                            clientId: nil,
+                            isException: true,
+                            originalStartTime: exception.originalStartTime
+                        )
+                        occurrences.append(occurrence)
+                    }
+                    // If deleted, skip
+                } else {
+                    // Regular occurrence - use base time
+                    guard let occurrenceStart = calendar.date(
+                        bySettingHour: baseHour,
+                        minute: baseMinute,
+                        second: 0,
+                        of: occurrenceDay
+                    ) else {
+                        currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate) ?? currentDate.addingTimeInterval(86400)
+                        continue
+                    }
+
+                    let occurrence = EASCalendarEvent(
+                        id: "\(master.id)_\(occurrenceIndex)",
+                        uid: master.uid,
+                        subject: master.subject,
+                        startTime: occurrenceStart,
+                        endTime: occurrenceStart.addingTimeInterval(duration),
+                        location: master.location,
+                        body: master.body,
+                        organizer: master.organizer,
+                        attendees: master.attendees,
+                        isAllDay: master.isAllDay,
+                        recurrence: nil,
+                        meetingStatus: master.meetingStatus,
+                        exceptions: nil,
+                        clientId: nil,
+                        isException: false,
+                        originalStartTime: nil
+                    )
+                    occurrences.append(occurrence)
+                }
+                occurrenceIndex += 1
+            }
+
+            // Advance to next potential occurrence
+            switch recurrence.type {
+            case .daily:
+                currentDate = calendar.date(byAdding: .day, value: recurrence.interval, to: currentDate) ?? currentDate.addingTimeInterval(86400)
+            case .weekly:
+                // For weekly, advance by one day and check mask
+                currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate) ?? currentDate.addingTimeInterval(86400)
+            case .monthly, .monthlyNth:
+                currentDate = calendar.date(byAdding: .month, value: recurrence.interval, to: currentDate) ?? currentDate.addingTimeInterval(2592000)
+            case .yearly, .yearlyNth:
+                currentDate = calendar.date(byAdding: .year, value: recurrence.interval, to: currentDate) ?? currentDate.addingTimeInterval(31536000)
+            }
+        }
+
+        return occurrences.isEmpty ? [master] : occurrences
+    }
+
+    // MARK: - Helpers
+    
+    private func dateToString(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = TimeZone.current
+        return formatter.string(from: date)
     }
 
     // MARK: - Convenience
@@ -569,16 +861,12 @@ final class EASCalendarManager: ObservableObject {
     }
 
     /// Find the most probable meeting for a recording based on time overlap
-    /// Note: recording.createdAt is the END time of the recording (when it was stopped)
     func findMostProbableMeeting(for recording: Recording) -> EASCalendarEvent? {
-        // recording.createdAt is the END time of the recording
         let recordingEnd = recording.createdAt
-        // Calculate start time using duration
         let recordingStart = recordingEnd.addingTimeInterval(-recording.duration)
 
         let calendar = Calendar.current
 
-        // Filter events for the same day as the recording
         let sameDayEvents = cachedEvents.filter { event in
             calendar.isDate(event.startTime, inSameDayAs: recordingEnd) ||
             calendar.isDate(event.endTime, inSameDayAs: recordingEnd)
@@ -586,13 +874,10 @@ final class EASCalendarManager: ObservableObject {
 
         guard !sameDayEvents.isEmpty else { return nil }
 
-        // Find events that overlap with the recording time
         let overlappingEvents = sameDayEvents.filter { event in
-            // Overlap check: event.startTime <= recordingEnd AND event.endTime >= recordingStart
             event.startTime <= recordingEnd && event.endTime >= recordingStart
         }
 
-        // If we have overlapping events, return the one with maximum overlap
         if !overlappingEvents.isEmpty {
             return overlappingEvents.max { event1, event2 in
                 let overlap1 = calculateOverlap(event: event1, recordingStart: recordingStart, recordingEnd: recordingEnd)
@@ -601,7 +886,6 @@ final class EASCalendarManager: ObservableObject {
             }
         }
 
-        // Fallback: find event with minimum difference between event end time and recording end time
         return sameDayEvents.min { event1, event2 in
             let diff1 = abs(event1.endTime.timeIntervalSince(recordingEnd))
             let diff2 = abs(event2.endTime.timeIntervalSince(recordingEnd))
@@ -609,7 +893,6 @@ final class EASCalendarManager: ObservableObject {
         }
     }
 
-    /// Calculate overlap duration between event and recording
     private func calculateOverlap(event: EASCalendarEvent, recordingStart: Date, recordingEnd: Date) -> TimeInterval {
         let overlapStart = max(event.startTime, recordingStart)
         let overlapEnd = min(event.endTime, recordingEnd)

@@ -46,6 +46,13 @@ Vanta-Speech/
 └── vanta-speech-design-system.md  # Design System (colors, typography, glassmorphism)
 ```
 
+### Documentation Files
+
+| File | Description |
+|------|-------------|
+| `vanta-speech-design-system.md` | Design System (colors, typography, glassmorphism) |
+| `Vanta Speech iOS/EAS_CALENDAR_SYNC.md` | **EAS Calendar Sync** — detailed technical documentation for Exchange ActiveSync integration, recurring events handling, and series grouping algorithm |
+
 ---
 
 ## Technology Stack

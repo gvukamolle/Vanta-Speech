@@ -24,6 +24,19 @@ final class AuthenticationManager: ObservableObject {
         loadStoredSession()
     }
 
+    // MARK: - Test Credentials
+    
+    /// System test credentials for testing without AD
+    private static let testCredentials = (
+        username: "usertest",
+        password: "usertestpas"
+    )
+    
+    /// Check if credentials are test credentials
+    private func isTestCredentials(username: String, password: String) -> Bool {
+        username == Self.testCredentials.username && password == Self.testCredentials.password
+    }
+
     // MARK: - Public API
 
     /// Attempt to log in with username and password
@@ -45,11 +58,16 @@ final class AuthenticationManager: ObservableObject {
             isAuthenticated = true
             isLoading = false
 
-            // Auto-connect Exchange calendar after successful AD login
-            await autoConnectExchangeCalendar(username: username, password: password)
-            
-            // Auto-connect Confluence after successful AD login
-            await autoConnectConfluence(username: username, password: password)
+            // Skip auto-connect for test credentials
+            if !isTestCredentials(username: username, password: password) {
+                // Auto-connect Exchange calendar after successful AD login
+                await autoConnectExchangeCalendar(username: username, password: password)
+                
+                // Auto-connect Confluence after successful AD login
+                await autoConnectConfluence(username: username, password: password)
+            } else {
+                debugLog("Test credentials detected - skipping Exchange/Confluence auto-connect", module: "Auth", level: .info)
+            }
             
         } catch let authError as LDAPAuthService.AuthError {
             // LDAP specific errors with full description

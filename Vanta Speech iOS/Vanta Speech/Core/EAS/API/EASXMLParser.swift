@@ -36,6 +36,13 @@ final class EASXMLParser: NSObject {
     private var inBody = false
     private var inRecurrence = false
     private var currentRecurrence: RecurrenceBuilder?
+    private var inExceptions = false
+    private var inException = false
+    private var currentException: ExceptionBuilder?
+    private var exceptions: [EASException] = []
+    
+    // For tracking orphan exceptions (separate events with ExceptionStartTime but no Recurrence)
+    private var currentEventExceptionStartTime: Date?
 
     // Response type tracking
     private var isFolderSyncResponse = false
@@ -140,6 +147,8 @@ extension EASXMLParser: XMLParserDelegate {
                     // In Sync response, Add means calendar item
                     currentEvent = EventBuilder()
                     inEvent = true
+                    // Reset exceptions for new event
+                    exceptions = []
                 }
             }
         case "Attendee":
@@ -154,6 +163,13 @@ extension EASXMLParser: XMLParserDelegate {
         case "Recurrence":
             currentRecurrence = RecurrenceBuilder()
             inRecurrence = true
+        case "Exceptions":
+            inExceptions = true
+        case "Exception":
+            if inExceptions {
+                currentException = ExceptionBuilder()
+                inException = true
+            }
         case "MoreAvailable":
             moreAvailable = true
         default:
@@ -200,12 +216,16 @@ extension EASXMLParser: XMLParserDelegate {
             switch elementName {
             case "ServerId":
                 currentEvent?.id = text
+            case "UID":
+                currentEvent?.uid = text
             case "Subject":
                 currentEvent?.subject = text
             case "StartTime":
                 currentEvent?.startTime = parseDate(text)
+                debugLog("Parser: StartTime raw='\(text)' parsed=\(String(describing: currentEvent?.startTime))", module: "EAS", level: .info)
             case "EndTime":
                 currentEvent?.endTime = parseDate(text)
+                debugLog("Parser: EndTime raw='\(text)' parsed=\(String(describing: currentEvent?.endTime))", module: "EAS", level: .info)
             case "Location":
                 currentEvent?.location = text
             case "AllDayEvent":
@@ -219,6 +239,14 @@ extension EASXMLParser: XMLParserDelegate {
             case "MeetingStatus":
                 currentEvent?.meetingStatus = Int(text)
                 debugLog("Parser: MeetingStatus: \(text)", module: "EAS", level: .info)
+            case "ExceptionStartTime":
+                // If not inside <Exception> block, this is an orphan exception
+                if !inException {
+                    currentEventExceptionStartTime = parseDate(text)
+                    currentEvent?.isException = true
+                    currentEvent?.originalStartTime = parseDate(text)
+                    debugLog("Parser: Orphan exception detected, originalStartTime=\(text)", module: "EAS", level: .info)
+                }
             case "Data":
                 if inBody {
                     currentEvent?.body = text
@@ -227,11 +255,33 @@ extension EASXMLParser: XMLParserDelegate {
             case "Body":
                 inBody = false
             case "Add", "Update":
-                if let event = currentEvent?.build() {
+                if var event = currentEvent?.build() {
+                    // If this is an orphan exception, set the flag
+                    if let originalTime = currentEventExceptionStartTime {
+                        event = EASCalendarEvent(
+                            id: event.id,
+                            subject: event.subject,
+                            startTime: event.startTime,
+                            endTime: event.endTime,
+                            location: event.location,
+                            body: event.body,
+                            organizer: event.organizer,
+                            attendees: event.attendees,
+                            isAllDay: event.isAllDay,
+                            recurrence: event.recurrence,
+                            meetingStatus: event.meetingStatus,
+                            exceptions: event.exceptions,
+                            clientId: event.clientId,
+                            isException: true,
+                            originalStartTime: originalTime
+                        )
+                        currentEventExceptionStartTime = nil
+                    }
                     events.append(event)
                 }
                 currentEvent = nil
                 inEvent = false
+                currentEventExceptionStartTime = nil
             default:
                 break
             }
@@ -301,6 +351,41 @@ extension EASXMLParser: XMLParserDelegate {
             }
         }
 
+        // Handle exception parsing
+        if inException {
+            switch elementName {
+            case "ExceptionStartTime":
+                currentException?.originalStartTime = parseDate(text)
+            case "StartTime":
+                currentException?.startTime = parseDate(text)
+            case "EndTime":
+                currentException?.endTime = parseDate(text)
+            case "Subject":
+                currentException?.subject = text
+            case "Location":
+                currentException?.location = text
+            case "Deleted":
+                if text == "1" {
+                    currentException?.isDeleted = true
+                }
+            case "Exception":
+                if let exception = currentException?.build() {
+                    exceptions.append(exception)
+                    debugLog("Parser: Exception: original=\(exception.originalStartTime), deleted=\(exception.isDeleted)", module: "EAS", level: .info)
+                }
+                currentException = nil
+                inException = false
+            default:
+                break
+            }
+        }
+
+        // Handle Exceptions container end
+        if elementName == "Exceptions" {
+            inExceptions = false
+            currentEvent?.exceptions = exceptions
+        }
+
         // Handle delete command parsing
         if inDelete {
             switch elementName {
@@ -347,6 +432,8 @@ extension EASXMLParser: XMLParserDelegate {
     // MARK: - Helpers
 
     private func parseDate(_ string: String) -> Date? {
+        let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        
         // EAS uses compact ISO8601 format: 20251107T100000Z (no dashes or colons)
         // Try compact format first (most common in EAS)
         let compactFormatter = DateFormatter()
@@ -354,21 +441,39 @@ extension EASXMLParser: XMLParserDelegate {
         compactFormatter.timeZone = TimeZone(identifier: "UTC")
         compactFormatter.locale = Locale(identifier: "en_US_POSIX")
 
-        if let date = compactFormatter.date(from: string) {
+        if let date = compactFormatter.date(from: trimmed) {
+            debugLog("Parser: Parsed date '\(trimmed)' -> \(date) (UTC)", module: "EAS", level: .info)
             return date
+        }
+        
+        // Try compact format WITHOUT Z (local time) - treat as UTC
+        if !trimmed.hasSuffix("Z") && trimmed.contains("T") {
+            compactFormatter.dateFormat = "yyyyMMdd'T'HHmmss"
+            compactFormatter.timeZone = TimeZone(identifier: "UTC")
+            if let date = compactFormatter.date(from: trimmed) {
+                debugLog("Parser: Parsed date '\(trimmed)' -> \(date) (no Z, treated as UTC)", module: "EAS", level: .info)
+                return date
+            }
         }
 
         // Try standard ISO8601 format
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
 
-        if let date = formatter.date(from: string) {
+        if let date = formatter.date(from: trimmed) {
+            debugLog("Parser: Parsed date '\(trimmed)' -> \(date) (ISO8601 with fractions)", module: "EAS", level: .info)
             return date
         }
 
         // Try without fractional seconds
         formatter.formatOptions = [.withInternetDateTime]
-        return formatter.date(from: string)
+        if let date = formatter.date(from: trimmed) {
+            debugLog("Parser: Parsed date '\(trimmed)' -> \(date) (ISO8601)", module: "EAS", level: .info)
+            return date
+        }
+        
+        debugLog("Parser: Failed to parse date '\(trimmed)'", module: "EAS", level: .error)
+        return nil
     }
 }
 
@@ -396,6 +501,7 @@ private class FolderBuilder {
 
 private class EventBuilder {
     var id = ""
+    var uid: String?
     var subject = ""
     var startTime: Date?
     var endTime: Date?
@@ -407,6 +513,9 @@ private class EventBuilder {
     var organizerName: String?
     var recurrence: EASRecurrence?
     var meetingStatus: Int?
+    var exceptions: [EASException] = []
+    var isException = false
+    var originalStartTime: Date?
 
     func build() -> EASCalendarEvent? {
         guard !id.isEmpty, let start = startTime else {
@@ -440,10 +549,13 @@ private class EventBuilder {
         // Convert meetingStatus integer to enum
         let status = meetingStatus.flatMap { EASMeetingStatus(rawValue: $0) }
 
-        debugLog("Parser: Built event: '\(subject)' from \(start) to \(end), organizer: \(organizer?.email ?? "none"), attendees: \(attendees.count), recurring: \(recurrence != nil), meetingStatus: \(meetingStatus ?? -1)", module: "EAS", level: .info)
+        let uidShort = uid?.prefix(8) ?? "nil"
+        let originalTimeStr = originalStartTime != nil ? "originalStartTime=\(originalStartTime!) " : ""
+        debugLog("Parser: Built event: '\(subject)' (uid:\(uidShort)...) from \(start) to \(end), id=\(id), recurring:\(recurrence != nil), isException:\(isException), \(originalTimeStr)exceptions:\(exceptions.count)", module: "EAS", level: .info)
 
         return EASCalendarEvent(
             id: id,
+            uid: uid,
             subject: subject.isEmpty ? "Untitled" : subject,
             startTime: start,
             endTime: end,
@@ -453,7 +565,31 @@ private class EventBuilder {
             attendees: attendees,
             isAllDay: isAllDay,
             recurrence: recurrence,
-            meetingStatus: status
+            meetingStatus: status,
+            exceptions: exceptions.isEmpty ? nil : exceptions,
+            clientId: nil,
+            isException: isException,
+            originalStartTime: originalStartTime
+        )
+    }
+}
+
+private class ExceptionBuilder {
+    var originalStartTime: Date?
+    var startTime: Date?
+    var endTime: Date?
+    var subject: String?
+    var location: String?
+    var isDeleted = false
+
+    func build() -> EASException? {
+        guard let originalStartTime = originalStartTime else { return nil }
+        return EASException(
+            originalStartTime: originalStartTime,
+            startTime: isDeleted ? nil : startTime,
+            endTime: isDeleted ? nil : endTime,
+            subject: subject,
+            location: location
         )
     }
 }

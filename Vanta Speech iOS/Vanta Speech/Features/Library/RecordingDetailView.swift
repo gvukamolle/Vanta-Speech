@@ -27,6 +27,7 @@ struct RecordingDetailView: View {
     
     // Meeting linking warning
     @State private var showMeetingLinkWarning = false
+    @State private var showMeetingLinkSecondLevel = false
     @State private var pendingTranscriptionAction: (() -> Void)?
 
     // Title editing
@@ -122,6 +123,7 @@ struct RecordingDetailView: View {
         }
         .meetingLinkingAlert(
             isPresented: $showMeetingLinkWarning,
+            showSecondLevel: $showMeetingLinkSecondLevel,
             for: recording,
             onSend: {
                 // User chose to send without linking

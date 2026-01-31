@@ -36,6 +36,9 @@ data class EASCalendarEvent(
     /** Whether this is an all-day event */
     val isAllDay: Boolean = false,
 
+    /** Exceptions (modified occurrences) for recurring events */
+    val exceptions: List<EASException>? = null,
+
     /** Client-generated ID for new events */
     val clientId: String? = null
 ) {
