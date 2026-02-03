@@ -357,6 +357,58 @@ if let exception = exceptionMap[date] {
 }
 ```
 
+### Date Moves (Exception with Different Date)
+
+When an exception moves an occurrence to a **different date** (not just time), special handling is required.
+
+**Example:**
+- Regular schedule: Thursdays at 10:00
+- Exception: "2026-01-15 (Thu) moved to 2026-01-13 (Tue) at 14:00"
+
+**The Problem:**
+If we naively use `exception.startTime` during iteration, the event would appear on Thursday with Tuesday's time, which is wrong.
+
+**The Solution:**
+
+```swift
+// 1. Identify moved exceptions (date changed, not just time)
+let movedExceptions = exceptions.filter { ex in
+    guard let startTime = ex.startTime, !ex.isDeleted else { return false }
+    let originalDay = calendar.startOfDay(for: ex.originalStartTime)
+    let newDay = calendar.startOfDay(for: startTime)
+    return originalDay != newDay  // Date actually moved
+}
+
+// 2. During iteration, handle three cases:
+//    a) Regular occurrence - create normally
+//    b) Same-day exception (time change) - modify time, keep date
+//    c) Moved exception - skip at original date, create at new date
+
+// When we encounter the original date:
+if let exception = exceptionMap[occurrenceDay] {
+    if isMovedToDifferentDate(exception) {
+        // Skip - this occurrence will be created at the target date
+        continue
+    } else {
+        // Same-day modification - create occurrence here with modified time
+        createOccurrence(on: occurrenceDay, time: exception.startTime)
+    }
+}
+
+// When we encounter the target date (during normal iteration):
+for movedEx in movedExceptions {
+    if calendar.startOfDay(for: movedEx.startTime!) == occurrenceDay {
+        // Create the moved occurrence here
+        createOccurrence(on: occurrenceDay, time: movedEx.startTime)
+    }
+}
+```
+
+**Result:**
+- Thursday 2026-01-15: No event (original occurrence moved)
+- Tuesday 2026-01-13: Event at 14:00 (moved occurrence)
+- All other Thursdays: Events at 10:00 (regular schedule)
+
 ---
 
 ## Virtual Master Creation
@@ -484,7 +536,24 @@ If all exceptions are deleted:
 - Base time calculation falls back to master.startTime
 - Expansion proceeds with deleted dates skipped
 
-### 4. Timezone Handling
+### 4. Date Moves (Different Day)
+
+When an exception moves an occurrence to a different day:
+- Original date: No event (occurrence moved away)
+- Target date: Event at the new time
+- The event ID tracks the original start time for reference
+
+```swift
+// Example: Thursday moved to Tuesday
+originalStartTime: 2026-01-15 (Thu) 10:00
+startTime: 2026-01-13 (Tue) 14:00
+
+// Result:
+// - 2026-01-15: Nothing (moved)
+// - 2026-01-13: Event at 14:00
+```
+
+### 5. Timezone Handling
 
 All times from Exchange are in UTC:
 ```swift
@@ -495,7 +564,7 @@ let startTime = parseDate("20260113T093000Z")  // UTC
 let localTime = startTime.formatted(timezone: .current)
 ```
 
-### 5. Very Long Series
+### 6. Very Long Series
 
 Protection against infinite loops:
 ```swift
@@ -601,6 +670,43 @@ Exceptions: [
 2026-01-13: (no event - cancelled) ✗
 2026-01-20: Standup at 10:00 ✓
 ```
+
+### Scenario 4: Moved to Different Date
+
+**Input:**
+```
+Master: Weekly Team Sync (Thursday 10:00)
+Exceptions: [
+    {
+        originalStartTime: 2026-01-15 10:00,  // Thursday
+        startTime: 2026-01-13 14:00,          // Tuesday (moved!)
+        isDeleted: false
+    }
+]
+```
+
+**Processing:**
+```
+Iteration over 2026-01-15 (Thursday):
+- Found exception with originalStartTime = 2026-01-15
+- Check: startTime day (2026-01-13) != originalStartTime day (2026-01-15)
+- This is a DATE MOVE - skip creating occurrence on Thursday
+
+Iteration over 2026-01-13 (Tuesday):
+- Check movedExceptions list
+- Found: exception with startTime = 2026-01-13
+- Create occurrence on Tuesday at 14:00
+```
+
+**Output:**
+```
+2026-01-08 (Thu): Team Sync at 10:00 ✓
+2026-01-13 (Tue): Team Sync at 14:00 ✓  (moved from Thu)
+2026-01-15 (Thu): (no event - moved to Tue) ✗
+2026-01-22 (Thu): Team Sync at 10:00 ✓
+```
+
+**Key Point:** The event appears on the NEW date (Tuesday), not the original date (Thursday).
 
 ---
 

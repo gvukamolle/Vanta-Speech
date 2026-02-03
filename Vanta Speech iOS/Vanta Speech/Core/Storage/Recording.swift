@@ -36,6 +36,10 @@ final class Recording {
 
     /// JSON-encoded array of emails the summary was sent to
     var summarySentToEmails: String?
+    
+    /// JSON-encoded array of selected recipient emails for summary
+    /// If nil, all attendees will receive the summary
+    var selectedSummaryRecipientsJSON: String?
 
     // MARK: - Confluence Export Tracking
 
@@ -72,6 +76,24 @@ final class Recording {
             if let data = try? JSONEncoder().encode(newValue),
                let json = String(data: data, encoding: .utf8) {
                 linkedMeetingAttendeesJSON = json
+            }
+        }
+    }
+    
+    /// Selected recipient emails for summary (if user customized recipients)
+    var selectedSummaryRecipients: [String] {
+        get {
+            guard let json = selectedSummaryRecipientsJSON,
+                  let data = json.data(using: .utf8),
+                  let emails = try? JSONDecoder().decode([String].self, from: data) else {
+                return []
+            }
+            return emails
+        }
+        set {
+            if let data = try? JSONEncoder().encode(newValue),
+               let json = String(data: data, encoding: .utf8) {
+                selectedSummaryRecipientsJSON = json
             }
         }
     }
@@ -138,6 +160,7 @@ extension Recording {
         linkedMeetingSubject = nil
         linkedMeetingAttendeesJSON = nil
         linkedMeetingOrganizerEmail = nil
+        selectedSummaryRecipientsJSON = nil
     }
 
     /// Mark as exported to Confluence

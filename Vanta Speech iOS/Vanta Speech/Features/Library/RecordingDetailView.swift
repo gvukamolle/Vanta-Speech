@@ -38,6 +38,7 @@ struct RecordingDetailView: View {
     @StateObject private var summaryEmailManager = SummaryEmailManager.shared
     @State private var showSendSummarySuccess = false
     @State private var showSendSummaryError = false
+    @State private var showRecipientsSheet = false
 
     var body: some View {
         ScrollView {
@@ -507,6 +508,15 @@ struct RecordingDetailView: View {
         guard let linkedId = recording.linkedMeetingId else { return nil }
         return calendarManager.cachedEvents.first { $0.id == linkedId }
     }
+    
+    /// Number of recipients for summary (user-selected or all attendees)
+    private var summaryRecipientCount: Int {
+        let selected = recording.selectedSummaryRecipients
+        if !selected.isEmpty {
+            return selected.count
+        }
+        return recording.linkedMeetingAttendeeEmails.count
+    }
 
     /// Events available for linking (excluding already linked ones)
     private var eventsForLinking: [EASCalendarEvent] {
@@ -597,56 +607,76 @@ struct RecordingDetailView: View {
                     .buttonStyle(.plain)
                     .vantaBlueGlassCard(cornerRadius: 16, shadowRadius: 0, tintOpacity: 0.12)
                     
-                    // Send Summary Button - в стиле других кнопок
+                    // Send Summary Section
                     if recording.canSendSummary {
-                        Button {
-                            sendSummary()
-                        } label: {
-                            HStack(spacing: 12) {
-                                ZStack {
-                                    Circle()
-                                        .fill(.ultraThinMaterial)
-                                    Circle()
-                                        .fill(Color.green.opacity(0.15))
-                                    if summaryEmailManager.isSending {
-                                        ProgressView()
-                                            .scaleEffect(0.7)
-                                    } else {
-                                        Image(systemName: recording.hasSentSummary ? "envelope.badge.fill" : "envelope")
-                                            .font(.callout)
-                                            .foregroundStyle(.green)
+                        VStack(spacing: 8) {
+                            // Send Button
+                            Button {
+                                sendSummary()
+                            } label: {
+                                HStack(spacing: 12) {
+                                    ZStack {
+                                        Circle()
+                                            .fill(.ultraThinMaterial)
+                                        Circle()
+                                            .fill(Color.green.opacity(0.15))
+                                        if summaryEmailManager.isSending {
+                                            ProgressView()
+                                                .scaleEffect(0.7)
+                                        } else {
+                                            Image(systemName: recording.hasSentSummary ? "envelope.badge.fill" : "envelope")
+                                                .font(.callout)
+                                                .foregroundStyle(.green)
+                                        }
                                     }
-                                }
-                                .frame(width: 36, height: 36)
+                                    .frame(width: 36, height: 36)
 
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(recording.hasSentSummary ? "Отправить повторно" : "Отправить саммари")
-                                        .font(.subheadline)
-                                        .fontWeight(.medium)
-                                        .foregroundStyle(.primary)
-                                    
-                                    if recording.hasSentSummary, let sentAt = recording.summarySentAt {
-                                        Text("Отправлено \(formattedSentDate(sentAt))")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    } else {
-                                        Text("\(recording.linkedMeetingAttendeeEmails.count) участников")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(recording.hasSentSummary ? "Отправить повторно" : "Отправить саммари")
+                                            .font(.subheadline)
+                                            .fontWeight(.medium)
+                                            .foregroundStyle(.primary)
+                                        
+                                        if recording.hasSentSummary, let sentAt = recording.summarySentAt {
+                                            Text("Отправлено \(formattedSentDate(sentAt))")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        } else {
+                                            Text("\(summaryRecipientCount) получателей")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
                                     }
+
+                                    Spacer()
+
+                                    Image(systemName: "paperplane")
+                                        .font(.caption)
+                                        .foregroundStyle(.tertiary)
                                 }
-
-                                Spacer()
-
-                                Image(systemName: "paperplane")
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
+                                .padding(12)
+                                .vantaGlassCard(cornerRadius: 16, shadowRadius: 0, tintOpacity: 0.10)
                             }
-                            .padding(12)
-                            .vantaGlassCard(cornerRadius: 16, shadowRadius: 0, tintOpacity: 0.10)
+                            .buttonStyle(.plain)
+                            .disabled(summaryEmailManager.isSending)
+                            
+                            // Edit Recipients Button
+                            Button {
+                                showRecipientsSheet = true
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "person.2")
+                                        .font(.caption)
+                                    Text("Изменить получателей")
+                                        .font(.caption)
+                                        .fontWeight(.medium)
+                                }
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
-                        .disabled(summaryEmailManager.isSending)
                     }
                 }
 
@@ -717,11 +747,16 @@ struct RecordingDetailView: View {
             .presentationDetents([.fraction(0.35)])
             .presentationDragIndicator(.visible)
         }
+        .sheet(isPresented: $showRecipientsSheet) {
+            SummaryRecipientsSheet(recording: recording)
+                .presentationDragIndicator(.visible)
+        }
         .alert("Саммари отправлено", isPresented: $showSendSummarySuccess) {
             Button("OK", role: .cancel) {}
         } message: {
-            let count = recording.linkedMeetingAttendeeEmails.count - 1 // excluding current user
-            Text("Саммари успешно отправлено \(max(count, 1)) участникам встречи")
+            let count = summaryRecipientCount
+            let recipientText = count == 1 ? "получателю" : "получателям"
+            Text("Саммари успешно отправлено \(count) \(recipientText)")
         }
         .alert("Ошибка отправки", isPresented: $showSendSummaryError) {
             Button("OK", role: .cancel) {}

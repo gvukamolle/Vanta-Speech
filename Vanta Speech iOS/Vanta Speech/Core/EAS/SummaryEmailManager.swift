@@ -50,35 +50,46 @@ final class SummaryEmailManager: ObservableObject {
         // Get current user email first
         let currentUserEmail = getCurrentUserEmail()
 
-        // Get attendees from live event first (more up-to-date than stored)
-        var attendees = getAttendeesFromLiveEvent(meetingId: recording.linkedMeetingId)
-
-        // Fallback to stored attendees if live event not found
-        if attendees.isEmpty {
-            attendees = recording.linkedMeetingAttendeeEmails
-            debugLog("Using stored attendees: \(attendees.count)", module: "SummaryEmail", level: .info)
+        // Check if user has customized recipients
+        let selectedRecipients = recording.selectedSummaryRecipients
+        
+        let recipients: [String]
+        
+        if !selectedRecipients.isEmpty {
+            // Use user-selected recipients
+            recipients = selectedRecipients
+            debugLog("Using user-selected recipients: \(recipients.count)", module: "SummaryEmail", level: .info)
         } else {
-            debugLog("Using live event attendees: \(attendees.count)", module: "SummaryEmail", level: .info)
-            // Update stored attendees for consistency
-            recording.linkedMeetingAttendeeEmails = attendees
+            // Get attendees from live event first (more up-to-date than stored)
+            var attendees = getAttendeesFromLiveEvent(meetingId: recording.linkedMeetingId)
+
+            // Fallback to stored attendees if live event not found
+            if attendees.isEmpty {
+                attendees = recording.linkedMeetingAttendeeEmails
+                debugLog("Using stored attendees: \(attendees.count)", module: "SummaryEmail", level: .info)
+            } else {
+                debugLog("Using live event attendees: \(attendees.count)", module: "SummaryEmail", level: .info)
+                // Update stored attendees for consistency
+                recording.linkedMeetingAttendeeEmails = attendees
+            }
+
+            // Final fallback to current user if empty and includeSelf is enabled
+            if attendees.isEmpty, includeSelfInSummaryEmail, let selfEmail = currentUserEmail {
+                attendees = [selfEmail]
+                debugLog("No attendees found, using current user as recipient", module: "SummaryEmail", level: .info)
+            }
+
+            guard !attendees.isEmpty else {
+                debugLog("Cannot send summary: no attendees and includeSelf is disabled", module: "SummaryEmail", level: .warning)
+                return false
+            }
+
+            // Filter recipients based on settings
+            recipients = filterRecipients(attendees: attendees, currentUserEmail: currentUserEmail)
         }
-
-        // Final fallback to current user if empty and includeSelf is enabled
-        if attendees.isEmpty, includeSelfInSummaryEmail, let selfEmail = currentUserEmail {
-            attendees = [selfEmail]
-            debugLog("No attendees found, using current user as recipient", module: "SummaryEmail", level: .info)
-        }
-
-        guard !attendees.isEmpty else {
-            debugLog("Cannot send summary: no attendees and includeSelf is disabled", module: "SummaryEmail", level: .warning)
-            return false
-        }
-
-        // Filter recipients based on settings
-        let recipients = filterRecipients(attendees: attendees, currentUserEmail: currentUserEmail)
-
+        
         guard !recipients.isEmpty else {
-            debugLog("Cannot send summary: all attendees filtered out", module: "SummaryEmail", level: .warning)
+            debugLog("Cannot send summary: no recipients after filtering", module: "SummaryEmail", level: .warning)
             return false
         }
 
@@ -94,7 +105,7 @@ final class SummaryEmailManager: ObservableObject {
             recording: recording,
             summary: summary,
             event: liveEvent,
-            attendeeNames: getAttendeeNames(from: liveEvent, fallbackEmails: attendees)
+            attendeeNames: getAttendeeNames(from: liveEvent, fallbackEmails: recipients)
         )
 
         isSending = true

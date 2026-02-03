@@ -543,15 +543,32 @@ final class EASCalendarManager: ObservableObject {
                 seriesStart = firstMaster.startTime
             }
             
-            // Series end: latest of exception dates OR sync range end
+            // Find the latest until date from all masters (for series that actually end)
+            let maxUntil = masters.compactMap { $0.recurrence?.until }.max()
+            if let until = maxUntil {
+                debugLog("  Latest until date: \(dateToString(until))", module: "EAS", level: .info)
+            }
+            
+            // Series end: consider until date from masters, exception dates, and sync range
             let seriesEnd: Date
-            if let maxException = exceptionDates.max() {
+            if let maxUntil = maxUntil {
+                // Master has explicit end date - use it (limited by sync range)
+                seriesEnd = min(rangeEnd, maxUntil)
+            } else if let maxException = exceptionDates.max() {
+                // No until date, but have exceptions - expand at least to last exception
                 seriesEnd = max(rangeEnd, maxException)
             } else {
+                // No until, no exceptions - use sync range
                 seriesEnd = rangeEnd
             }
             
             debugLog("  Series range: \(dateToString(seriesStart)) to \(dateToString(seriesEnd))", module: "EAS", level: .info)
+            debugLog("  Global range: \(dateToString(rangeStart)) to \(dateToString(rangeEnd))", module: "EAS", level: .info)
+            
+            // Calculate actual expansion range
+            let expandStart = max(rangeStart, seriesStart)
+            let expandEnd = min(rangeEnd, seriesEnd)
+            debugLog("  Expand range: \(dateToString(expandStart)) to \(dateToString(expandEnd))", module: "EAS", level: .info)
             
             // Use the master with most exceptions as template
             let bestMaster = masters.sorted { 
@@ -561,13 +578,13 @@ final class EASCalendarManager: ObservableObject {
             let duration = bestMaster.endTime.timeIntervalSince(bestMaster.startTime)
             
             // Create virtual master for this series
-            // Use recurrence WITHOUT until date, since we're managing the range manually
+            // Use the latest until date from all masters (if any)
             let virtualRecurrence = EASRecurrence(
                 type: recurrence.type,
                 interval: recurrence.interval,
                 dayOfWeek: recurrence.dayOfWeek,
                 dayOfMonth: recurrence.dayOfMonth,
-                until: nil  // Don't limit by master's until date
+                until: maxUntil  // Use actual until date to stop expansion
             )
             
             let virtualMaster = EASCalendarEvent(
@@ -590,8 +607,7 @@ final class EASCalendarManager: ObservableObject {
             )
             
             // Expand only within series time range (limited by global range)
-            let expandStart = max(rangeStart, seriesStart)
-            let expandEnd = min(rangeEnd, seriesEnd)
+            // expandStart and expandEnd already calculated above for logging
             
             let occurrences = expandOccurrences(
                 for: virtualMaster,
@@ -676,6 +692,7 @@ final class EASCalendarManager: ObservableObject {
     }
     
     /// Expand occurrences for a master using base time
+    /// Handles: regular occurrences, time changes, date moves, and deletions
     private func expandOccurrences(
         for master: EASCalendarEvent,
         from rangeStart: Date,
@@ -700,6 +717,17 @@ final class EASCalendarManager: ObservableObject {
             let key = calendar.startOfDay(for: ex.originalStartTime)
             map[key] = ex
         } ?? [:]
+        
+        // Find exceptions that moved to a different date (not just time change)
+        // These need to be added separately at their new date
+        let movedExceptions = master.exceptions?.filter { ex in
+            guard let startTime = ex.startTime, !ex.isDeleted else { return false }
+            let originalDay = calendar.startOfDay(for: ex.originalStartTime)
+            let newDay = calendar.startOfDay(for: startTime)
+            return originalDay != newDay
+        } ?? []
+        
+        var movedOccurrenceIds = Set<String>() // Track which moved exceptions we've added
 
         // Start from rangeStart
         var currentDate = rangeStart
@@ -729,12 +757,60 @@ final class EASCalendarManager: ObservableObject {
                 shouldInclude = true
             }
 
-            if shouldInclude {
-                let occurrenceDay = calendar.startOfDay(for: currentDate)
+            let occurrenceDay = calendar.startOfDay(for: currentDate)
+            
+            // Check for moved exceptions that target this date (ALWAYS, not just for pattern-matching days)
+            // This handles exceptions moved to days that don't match the recurrence pattern
+            for movedEx in movedExceptions {
+                guard let movedStartTime = movedEx.startTime else { continue }
+                let movedDay = calendar.startOfDay(for: movedStartTime)
+                let movedId = "\(master.id)_moved_\(movedEx.originalStartTime.timeIntervalSince1970)"
                 
+                if movedDay == occurrenceDay && !movedOccurrenceIds.contains(movedId) {
+                    // This moved exception belongs on this day
+                    let occurrenceEnd = movedEx.endTime ?? movedStartTime.addingTimeInterval(duration)
+                    
+                    let occurrence = EASCalendarEvent(
+                        id: movedId,
+                        uid: master.uid,
+                        subject: movedEx.subject ?? master.subject,
+                        startTime: movedStartTime,
+                        endTime: occurrenceEnd,
+                        location: movedEx.location ?? master.location,
+                        body: master.body,
+                        organizer: master.organizer,
+                        attendees: master.attendees,
+                        isAllDay: master.isAllDay,
+                        recurrence: nil,
+                        meetingStatus: master.meetingStatus,
+                        exceptions: nil,
+                        clientId: nil,
+                        isException: true,
+                        originalStartTime: movedEx.originalStartTime
+                    )
+                    occurrences.append(occurrence)
+                    movedOccurrenceIds.insert(movedId)
+                    occurrenceIndex += 1
+                }
+            }
+            
+            if shouldInclude {
+                // Handle regular occurrence or same-day exception
                 if let exception = exceptionMap[occurrenceDay] {
                     if !exception.isDeleted {
-                        // Modified occurrence - use exception's data if available, otherwise use base time
+                        // Check if this is a moved exception (handled above)
+                        if let startTime = exception.startTime {
+                            let originalDay = calendar.startOfDay(for: exception.originalStartTime)
+                            let newDay = calendar.startOfDay(for: startTime)
+                            if originalDay != newDay {
+                                // This exception moved to a different date - skip here
+                                // It will be created when we reach the target date
+                                currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate) ?? currentDate.addingTimeInterval(86400)
+                                continue
+                            }
+                        }
+                        
+                        // Same-day modification - use exception's data
                         let occurrenceStart = exception.startTime ?? calendar.date(
                             bySettingHour: baseHour,
                             minute: baseMinute,
@@ -762,8 +838,9 @@ final class EASCalendarManager: ObservableObject {
                             originalStartTime: exception.originalStartTime
                         )
                         occurrences.append(occurrence)
+                        occurrenceIndex += 1
                     }
-                    // If deleted, skip
+                    // If deleted, skip entirely
                 } else {
                     // Regular occurrence - use base time
                     guard let occurrenceStart = calendar.date(
@@ -795,8 +872,8 @@ final class EASCalendarManager: ObservableObject {
                         originalStartTime: nil
                     )
                     occurrences.append(occurrence)
+                    occurrenceIndex += 1
                 }
-                occurrenceIndex += 1
             }
 
             // Advance to next potential occurrence
@@ -804,8 +881,25 @@ final class EASCalendarManager: ObservableObject {
             case .daily:
                 currentDate = calendar.date(byAdding: .day, value: recurrence.interval, to: currentDate) ?? currentDate.addingTimeInterval(86400)
             case .weekly:
-                // For weekly, advance by one day and check mask
+                // For weekly recurrence, we need to handle interval correctly
+                // Move forward by 1 day to continue checking days in current week
                 currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate) ?? currentDate.addingTimeInterval(86400)
+                
+                // If we've moved past all days in the current week that match the pattern,
+                // and interval > 1, we need to skip ahead by (interval - 1) weeks
+                if recurrence.interval > 1 {
+                    // Check if there are any more matching days in this week
+                    let weekday = calendar.component(.weekday, from: currentDate)
+                    let hasMoreDaysInWeek = (weekday...7).contains { day in
+                        recurrence.includesWeekday(day)
+                    }
+                    
+                    // If no more matching days in this week, skip to next occurrence week
+                    if !hasMoreDaysInWeek {
+                        let daysToSkip = (recurrence.interval - 1) * 7
+                        currentDate = calendar.date(byAdding: .day, value: daysToSkip, to: currentDate) ?? currentDate.addingTimeInterval(TimeInterval(86400 * daysToSkip))
+                    }
+                }
             case .monthly, .monthlyNth:
                 currentDate = calendar.date(byAdding: .month, value: recurrence.interval, to: currentDate) ?? currentDate.addingTimeInterval(2592000)
             case .yearly, .yearlyNth:
